@@ -8,34 +8,48 @@ const {
 } = require("../services/storageService");
 
 // ======================================================
-// HELPER: CHECK INHERITED SHARED-FOLDER ACCESS
+// HELPER: CHECK SHARED FOLDER PERMISSION
 // ======================================================
 
 const getInheritedFolderPermission = async ({
   folderId,
   userId,
 }) => {
-  let currentFolderId = folderId;
+  let currentFolderId =
+    folderId;
 
-  const visited = new Set();
+  const visited =
+    new Set();
 
   while (currentFolderId) {
-    if (visited.has(currentFolderId)) {
+    if (
+      visited.has(
+        currentFolderId
+      )
+    ) {
       break;
     }
 
-    visited.add(currentFolderId);
+    visited.add(
+      currentFolderId
+    );
 
-    // Check whether this folder is shared
-    // directly with the current user
     const {
       data: share,
       error: shareError,
     } = await supabase
       .from("shares")
-      .select("id, permission")
-      .eq("folder_id", currentFolderId)
-      .eq("shared_with_id", userId)
+      .select(
+        "id, permission"
+      )
+      .eq(
+        "folder_id",
+        currentFolderId
+      )
+      .eq(
+        "shared_with_id",
+        userId
+      )
       .maybeSingle();
 
     if (shareError) {
@@ -46,7 +60,6 @@ const getInheritedFolderPermission = async ({
       return share.permission;
     }
 
-    // Move upward through the folder tree
     const {
       data: folder,
       error: folderError,
@@ -55,7 +68,10 @@ const getInheritedFolderPermission = async ({
       .select(
         "id, parent_id, is_deleted"
       )
-      .eq("id", currentFolderId)
+      .eq(
+        "id",
+        currentFolderId
+      )
       .maybeSingle();
 
     if (folderError) {
@@ -78,28 +94,35 @@ const getInheritedFolderPermission = async ({
 
 // ======================================================
 // UPLOAD FILE
+// OWNER ONLY FOR NOW
 // ======================================================
 
-const uploadFile = async (req, res) => {
-  let uploadedStoragePath = null;
+const uploadFile = async (
+  req,
+  res
+) => {
+  let uploadedStoragePath =
+    null;
 
   try {
-    const ownerId = req.user.id;
+    const ownerId =
+      req.user.id;
 
     const folderId =
-      req.body.folderId || null;
+      req.body.folderId ||
+      null;
 
     if (!req.file) {
       return res.status(400).json({
         error: {
-          code: "FILE_REQUIRED",
+          code:
+            "FILE_REQUIRED",
           message:
             "Please select a file to upload",
         },
       });
     }
 
-    // Check folder
     if (folderId) {
       const {
         data: folder,
@@ -109,7 +132,10 @@ const uploadFile = async (req, res) => {
         .select(
           "id, owner_id, is_deleted"
         )
-        .eq("id", folderId)
+        .eq(
+          "id",
+          folderId
+        )
         .single();
 
       if (
@@ -118,7 +144,8 @@ const uploadFile = async (req, res) => {
       ) {
         return res.status(404).json({
           error: {
-            code: "FOLDER_NOT_FOUND",
+            code:
+              "FOLDER_NOT_FOUND",
             message:
               "Target folder not found",
           },
@@ -126,7 +153,8 @@ const uploadFile = async (req, res) => {
       }
 
       if (
-        folder.owner_id !== ownerId ||
+        folder.owner_id !==
+          ownerId ||
         folder.is_deleted
       ) {
         return res.status(403).json({
@@ -139,7 +167,6 @@ const uploadFile = async (req, res) => {
       }
     }
 
-    // Storage path
     const storagePath =
       buildStoragePath({
         ownerId,
@@ -151,14 +178,14 @@ const uploadFile = async (req, res) => {
     uploadedStoragePath =
       storagePath;
 
-    // Upload object
     await uploadFileToStorage({
-      buffer: req.file.buffer,
+      buffer:
+        req.file.buffer,
       storagePath,
-      mimeType: req.file.mimetype,
+      mimeType:
+        req.file.mimetype,
     });
 
-    // Save metadata
     const {
       data: file,
       error: insertError,
@@ -173,8 +200,10 @@ const uploadFile = async (req, res) => {
           req.file.size,
         storage_path:
           storagePath,
-        owner_id: ownerId,
-        folder_id: folderId,
+        owner_id:
+          ownerId,
+        folder_id:
+          folderId,
       })
       .select(
         "id, name, mime_type, size_bytes, storage_path, owner_id, folder_id, is_deleted, is_starred, created_at, updated_at"
@@ -196,10 +225,14 @@ const uploadFile = async (req, res) => {
       file: {
         id: file.id,
         name: file.name,
-        mimeType: file.mime_type,
-        sizeBytes: file.size_bytes,
-        ownerId: file.owner_id,
-        folderId: file.folder_id,
+        mimeType:
+          file.mime_type,
+        sizeBytes:
+          file.size_bytes,
+        ownerId:
+          file.owner_id,
+        folderId:
+          file.folder_id,
         isDeleted:
           file.is_deleted,
         isStarred:
@@ -216,12 +249,16 @@ const uploadFile = async (req, res) => {
       error
     );
 
-    if (uploadedStoragePath) {
+    if (
+      uploadedStoragePath
+    ) {
       try {
         await deleteFileFromStorage(
           uploadedStoragePath
         );
-      } catch (cleanupError) {
+      } catch (
+        cleanupError
+      ) {
         console.error(
           "Upload cleanup error:",
           cleanupError
@@ -241,19 +278,19 @@ const uploadFile = async (req, res) => {
 };
 
 // ======================================================
-// GET FILE + SIGNED URL + RECENT
-//
-// ACCESS:
-// 1. Owner
-// 2. Direct file share
-// 3. File inside shared folder
-// 4. File inside nested child of shared folder
+// GET FILE
 // ======================================================
 
-const getFile = async (req, res) => {
+const getFile = async (
+  req,
+  res
+) => {
   try {
-    const userId = req.user.id;
-    const fileId = req.params.id;
+    const userId =
+      req.user.id;
+
+    const fileId =
+      req.params.id;
 
     const {
       data: file,
@@ -266,55 +303,50 @@ const getFile = async (req, res) => {
       .eq("id", fileId)
       .single();
 
-    if (error || !file) {
+    if (
+      error ||
+      !file ||
+      file.is_deleted
+    ) {
       return res.status(404).json({
         error: {
-          code: "FILE_NOT_FOUND",
-          message: "File not found",
+          code:
+            "FILE_NOT_FOUND",
+          message:
+            "File not found",
         },
       });
     }
-
-    if (file.is_deleted) {
-      return res.status(404).json({
-        error: {
-          code: "FILE_NOT_FOUND",
-          message: "File not found",
-        },
-      });
-    }
-
-    // ==================================================
-    // ACCESS CONTROL
-    // ==================================================
 
     let permission = "owner";
     let accessType = "owner";
 
     if (
-      file.owner_id !== userId
+      file.owner_id !==
+      userId
     ) {
-      // -----------------------------------------------
-      // FIRST:
-      // Check whether the FILE itself is shared
-      // -----------------------------------------------
-
       const {
         data: directShare,
-        error: directShareError,
+        error:
+          directShareError,
       } = await supabase
         .from("shares")
         .select(
           "id, permission"
         )
-        .eq("file_id", fileId)
+        .eq(
+          "file_id",
+          fileId
+        )
         .eq(
           "shared_with_id",
           userId
         )
         .maybeSingle();
 
-      if (directShareError) {
+      if (
+        directShareError
+      ) {
         throw directShareError;
       }
 
@@ -325,15 +357,13 @@ const getFile = async (req, res) => {
         accessType =
           "direct-file-share";
       } else {
-        // ---------------------------------------------
-        // SECOND:
-        // Check containing folder + ancestors
-        // ---------------------------------------------
-
-        if (!file.folder_id) {
+        if (
+          !file.folder_id
+        ) {
           return res.status(403).json({
             error: {
-              code: "FORBIDDEN",
+              code:
+                "FORBIDDEN",
               message:
                 "You do not have access to this file",
             },
@@ -341,19 +371,21 @@ const getFile = async (req, res) => {
         }
 
         const inheritedPermission =
-          await getInheritedFolderPermission({
-            folderId:
-              file.folder_id,
-
-            userId,
-          });
+          await getInheritedFolderPermission(
+            {
+              folderId:
+                file.folder_id,
+              userId,
+            }
+          );
 
         if (
           !inheritedPermission
         ) {
           return res.status(403).json({
             error: {
-              code: "FORBIDDEN",
+              code:
+                "FORBIDDEN",
               message:
                 "You do not have access to this file",
             },
@@ -367,10 +399,6 @@ const getFile = async (req, res) => {
           "shared-folder";
       }
     }
-
-    // ==================================================
-    // MARK RECENT
-    // ==================================================
 
     const accessedAt =
       new Date().toISOString();
@@ -395,58 +423,42 @@ const getFile = async (req, res) => {
       );
     }
 
-    // ==================================================
-    // SIGNED DOWNLOAD URL
-    // ==================================================
-
     const signedUrl =
       await createSignedDownloadUrl(
         file.storage_path,
         300
       );
 
-    // ==================================================
-    // RESPONSE
-    // ==================================================
-
     return res.status(200).json({
       file: {
         id: file.id,
-
-        name:
-          file.name,
-
+        name: file.name,
         mimeType:
           file.mime_type,
-
         sizeBytes:
           file.size_bytes,
-
         ownerId:
           file.owner_id,
-
         folderId:
           file.folder_id,
-
         isStarred:
           file.is_starred,
-
         createdAt:
           file.created_at,
-
         updatedAt:
           file.updated_at,
-
         lastAccessedAt:
           accessedAt,
-
         permission,
-
         accessType,
+        canEdit:
+          permission ===
+            "owner" ||
+          permission ===
+            "editor",
       },
 
       signedUrl,
-
       expiresIn: 300,
     });
   } catch (error) {
@@ -467,8 +479,16 @@ const getFile = async (req, res) => {
 };
 
 // ======================================================
-// UPDATE / RENAME / MOVE FILE
-// OWNER ONLY
+// UPDATE / RENAME FILE
+//
+// OWNER:
+// rename + move
+//
+// EDITOR:
+// rename only
+//
+// VIEWER:
+// blocked
 // ======================================================
 
 const updateFile = async (
@@ -476,7 +496,7 @@ const updateFile = async (
   res
 ) => {
   try {
-    const ownerId =
+    const userId =
       req.user.id;
 
     const fileId =
@@ -504,20 +524,10 @@ const updateFile = async (
     ) {
       return res.status(404).json({
         error: {
-          code: "FILE_NOT_FOUND",
-          message: "File not found",
-        },
-      });
-    }
-
-    if (
-      file.owner_id !== ownerId
-    ) {
-      return res.status(403).json({
-        error: {
-          code: "FORBIDDEN",
+          code:
+            "FILE_NOT_FOUND",
           message:
-            "You do not have permission to modify this file",
+            "File not found",
         },
       });
     }
@@ -525,17 +535,114 @@ const updateFile = async (
     if (file.is_deleted) {
       return res.status(400).json({
         error: {
-          code: "FILE_DELETED",
+          code:
+            "FILE_DELETED",
           message:
             "Deleted files cannot be modified",
         },
       });
     }
 
+    let permission = null;
+
+    // Owner
+    if (
+      file.owner_id ===
+      userId
+    ) {
+      permission = "owner";
+    } else {
+      // Direct file share
+      const {
+        data: directShare,
+        error:
+          directShareError,
+      } = await supabase
+        .from("shares")
+        .select(
+          "id, permission"
+        )
+        .eq(
+          "file_id",
+          fileId
+        )
+        .eq(
+          "shared_with_id",
+          userId
+        )
+        .maybeSingle();
+
+      if (
+        directShareError
+      ) {
+        throw directShareError;
+      }
+
+      if (directShare) {
+        permission =
+          directShare.permission;
+      } else if (
+        file.folder_id
+      ) {
+        permission =
+          await getInheritedFolderPermission(
+            {
+              folderId:
+                file.folder_id,
+              userId,
+            }
+          );
+      }
+    }
+
+    if (!permission) {
+      return res.status(403).json({
+        error: {
+          code:
+            "FORBIDDEN",
+          message:
+            "You do not have permission to modify this file",
+        },
+      });
+    }
+
+    if (
+      permission ===
+      "viewer"
+    ) {
+      return res.status(403).json({
+        error: {
+          code:
+            "VIEWER_READ_ONLY",
+          message:
+            "Viewer access is read-only",
+        },
+      });
+    }
+
+    const isOwner =
+      permission === "owner";
+
+    // Editor cannot move
+    if (
+      !isOwner &&
+      folderId !== undefined
+    ) {
+      return res.status(403).json({
+        error: {
+          code:
+            "EDITOR_RENAME_ONLY",
+          message:
+            "Editors can rename shared files but cannot move them",
+        },
+      });
+    }
+
     const updates = {};
 
-    // Rename
-    if (name !== undefined) {
+    if (
+      name !== undefined
+    ) {
       if (!name.trim()) {
         return res.status(400).json({
           error: {
@@ -551,7 +658,7 @@ const updateFile = async (
         name.trim();
     }
 
-    // Move
+    // Owner-only move
     if (
       folderId !== undefined
     ) {
@@ -566,7 +673,10 @@ const updateFile = async (
           .select(
             "id, owner_id, is_deleted"
           )
-          .eq("id", folderId)
+          .eq(
+            "id",
+            folderId
+          )
           .single();
 
         if (
@@ -585,12 +695,13 @@ const updateFile = async (
 
         if (
           folder.owner_id !==
-            ownerId ||
+            file.owner_id ||
           folder.is_deleted
         ) {
           return res.status(403).json({
             error: {
-              code: "FORBIDDEN",
+              code:
+                "FORBIDDEN",
               message:
                 "You cannot move this file to that folder",
             },
@@ -640,32 +751,24 @@ const updateFile = async (
         "File updated successfully",
 
       file: {
-        id: updatedFile.id,
-
+        id:
+          updatedFile.id,
         name:
           updatedFile.name,
-
         mimeType:
           updatedFile.mime_type,
-
         sizeBytes:
           updatedFile.size_bytes,
-
         ownerId:
           updatedFile.owner_id,
-
         folderId:
           updatedFile.folder_id,
-
         isDeleted:
           updatedFile.is_deleted,
-
         isStarred:
           updatedFile.is_starred,
-
         createdAt:
           updatedFile.created_at,
-
         updatedAt:
           updatedFile.updated_at,
       },
@@ -688,7 +791,7 @@ const updateFile = async (
 };
 
 // ======================================================
-// SOFT DELETE FILE
+// DELETE FILE
 // OWNER ONLY
 // ======================================================
 
@@ -720,20 +823,23 @@ const deleteFile = async (
     ) {
       return res.status(404).json({
         error: {
-          code: "FILE_NOT_FOUND",
-          message: "File not found",
+          code:
+            "FILE_NOT_FOUND",
+          message:
+            "File not found",
         },
       });
     }
 
     if (
-      file.owner_id !== ownerId
+      file.owner_id !==
+      ownerId
     ) {
       return res.status(403).json({
         error: {
           code: "FORBIDDEN",
           message:
-            "You do not have permission to delete this file",
+            "Only the owner can delete this file",
         },
       });
     }
@@ -756,7 +862,6 @@ const deleteFile = async (
       .from("files")
       .update({
         is_deleted: true,
-
         updated_at:
           new Date().toISOString(),
       })
@@ -777,16 +882,12 @@ const deleteFile = async (
       file: {
         id:
           deletedFile.id,
-
         name:
           deletedFile.name,
-
         isDeleted:
           deletedFile.is_deleted,
-
         isStarred:
           deletedFile.is_starred,
-
         updatedAt:
           deletedFile.updated_at,
       },
@@ -820,7 +921,6 @@ const getTrash = async (
     const ownerId =
       req.user.id;
 
-    // Deleted files
     const {
       data: files,
       error: filesError,
@@ -837,18 +937,14 @@ const getTrash = async (
         "is_deleted",
         true
       )
-      .order(
-        "updated_at",
-        {
-          ascending: false,
-        }
-      );
+      .order("updated_at", {
+        ascending: false,
+      });
 
     if (filesError) {
       throw filesError;
     }
 
-    // Deleted folders
     const {
       data: folders,
       error: foldersError,
@@ -865,74 +961,56 @@ const getTrash = async (
         "is_deleted",
         true
       )
-      .order(
-        "updated_at",
-        {
-          ascending: false,
-        }
-      );
+      .order("updated_at", {
+        ascending: false,
+      });
 
     if (foldersError) {
       throw foldersError;
     }
 
     return res.status(200).json({
-      files: (
-        files || []
-      ).map((file) => ({
-        id: file.id,
+      files: (files || []).map(
+        (file) => ({
+          id: file.id,
+          name: file.name,
+          mimeType:
+            file.mime_type,
+          sizeBytes:
+            file.size_bytes,
+          folderId:
+            file.folder_id,
+          isDeleted:
+            file.is_deleted,
+          isStarred:
+            file.is_starred,
+          createdAt:
+            file.created_at,
+          updatedAt:
+            file.updated_at,
+        })
+      ),
 
-        name: file.name,
-
-        mimeType:
-          file.mime_type,
-
-        sizeBytes:
-          file.size_bytes,
-
-        folderId:
-          file.folder_id,
-
-        isDeleted:
-          file.is_deleted,
-
-        isStarred:
-          file.is_starred,
-
-        createdAt:
-          file.created_at,
-
-        updatedAt:
-          file.updated_at,
-      })),
-
-      folders: (
-        folders || []
-      ).map((folder) => ({
-        id:
-          folder.id,
-
-        name:
-          folder.name,
-
-        parentId:
-          folder.parent_id,
-
-        ownerId:
-          folder.owner_id,
-
-        isDeleted:
-          folder.is_deleted,
-
-        isStarred:
-          folder.is_starred,
-
-        createdAt:
-          folder.created_at,
-
-        updatedAt:
-          folder.updated_at,
-      })),
+      folders:
+        (folders || []).map(
+          (folder) => ({
+            id: folder.id,
+            name:
+              folder.name,
+            parentId:
+              folder.parent_id,
+            ownerId:
+              folder.owner_id,
+            isDeleted:
+              folder.is_deleted,
+            isStarred:
+              folder.is_starred,
+            createdAt:
+              folder.created_at,
+            updatedAt:
+              folder.updated_at,
+          })
+        ),
     });
   } catch (error) {
     console.error(
@@ -993,13 +1071,14 @@ const restoreFile = async (
     }
 
     if (
-      file.owner_id !== ownerId
+      file.owner_id !==
+      ownerId
     ) {
       return res.status(403).json({
         error: {
           code: "FORBIDDEN",
           message:
-            "You do not have permission to restore this file",
+            "Only the owner can restore this file",
         },
       });
     }
@@ -1048,10 +1127,8 @@ const restoreFile = async (
       .from("files")
       .update({
         is_deleted: false,
-
         folder_id:
           restoreFolderId,
-
         updated_at:
           new Date().toISOString(),
       })
@@ -1072,19 +1149,14 @@ const restoreFile = async (
       file: {
         id:
           restoredFile.id,
-
         name:
           restoredFile.name,
-
         folderId:
           restoredFile.folder_id,
-
         isDeleted:
           restoredFile.is_deleted,
-
         isStarred:
           restoredFile.is_starred,
-
         updatedAt:
           restoredFile.updated_at,
       },
@@ -1151,10 +1223,9 @@ const permanentlyDeleteFile =
       ) {
         return res.status(403).json({
           error: {
-            code:
-              "FORBIDDEN",
+            code: "FORBIDDEN",
             message:
-              "You do not have permission to permanently delete this file",
+              "Only the owner can permanently delete this file",
           },
         });
       }
