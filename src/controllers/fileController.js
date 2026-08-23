@@ -473,14 +473,18 @@ const deleteFile = async (req, res) => {
 
 
 // ======================================================
-// GET TRASH
+// GET TRASH - FILES + FOLDERS
 // ======================================================
 
 const getTrash = async (req, res) => {
   try {
     const ownerId = req.user.id;
 
-    const { data: files, error } = await supabase
+    // --------------------------------------------------
+    // GET DELETED FILES
+    // --------------------------------------------------
+
+    const { data: files, error: filesError } = await supabase
       .from("files")
       .select(
         "id, name, mime_type, size_bytes, folder_id, is_deleted, created_at, updated_at"
@@ -489,12 +493,33 @@ const getTrash = async (req, res) => {
       .eq("is_deleted", true)
       .order("updated_at", { ascending: false });
 
-    if (error) {
-      throw error;
+    if (filesError) {
+      throw filesError;
     }
 
+    // --------------------------------------------------
+    // GET DELETED FOLDERS
+    // --------------------------------------------------
+
+    const { data: folders, error: foldersError } = await supabase
+      .from("folders")
+      .select(
+        "id, name, parent_id, owner_id, is_deleted, created_at, updated_at"
+      )
+      .eq("owner_id", ownerId)
+      .eq("is_deleted", true)
+      .order("updated_at", { ascending: false });
+
+    if (foldersError) {
+      throw foldersError;
+    }
+
+    // --------------------------------------------------
+    // RESPONSE
+    // --------------------------------------------------
+
     return res.status(200).json({
-      files: files.map((file) => ({
+      files: (files || []).map((file) => ({
         id: file.id,
         name: file.name,
         mimeType: file.mime_type,
@@ -503,6 +528,16 @@ const getTrash = async (req, res) => {
         isDeleted: file.is_deleted,
         createdAt: file.created_at,
         updatedAt: file.updated_at,
+      })),
+
+      folders: (folders || []).map((folder) => ({
+        id: folder.id,
+        name: folder.name,
+        parentId: folder.parent_id,
+        ownerId: folder.owner_id,
+        isDeleted: folder.is_deleted,
+        createdAt: folder.created_at,
+        updatedAt: folder.updated_at,
       })),
     });
   } catch (error) {

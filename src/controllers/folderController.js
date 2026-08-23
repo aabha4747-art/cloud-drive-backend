@@ -493,6 +493,209 @@ const deleteFolder = async (req, res) => {
   }
 };
 
+// ======================================================
+// RESTORE FOLDER
+// ======================================================
+
+const restoreFolder = async (req, res) => {
+  try {
+    const ownerId = req.user.id;
+    const folderId = req.params.id;
+
+    const { data: folder, error: folderError } = await supabase
+      .from("folders")
+      .select("id, name, owner_id, parent_id, is_deleted")
+      .eq("id", folderId)
+      .single();
+
+    if (folderError || !folder) {
+      return res.status(404).json({
+        error: {
+          code: "FOLDER_NOT_FOUND",
+          message: "Folder not found",
+        },
+      });
+    }
+
+    if (folder.owner_id !== ownerId) {
+      return res.status(403).json({
+        error: {
+          code: "FORBIDDEN",
+          message: "You do not have permission to restore this folder",
+        },
+      });
+    }
+
+    if (!folder.is_deleted) {
+      return res.status(400).json({
+        error: {
+          code: "NOT_IN_TRASH",
+          message: "Folder is not in Trash",
+        },
+      });
+    }
+
+    let restoreParentId = folder.parent_id;
+
+    if (restoreParentId) {
+      const { data: parentFolder } = await supabase
+        .from("folders")
+        .select("id, is_deleted")
+        .eq("id", restoreParentId)
+        .maybeSingle();
+
+      if (!parentFolder || parentFolder.is_deleted) {
+        restoreParentId = null;
+      }
+    }
+
+    const { data: restoredFolder, error } = await supabase
+      .from("folders")
+      .update({
+        is_deleted: false,
+        parent_id: restoreParentId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", folderId)
+      .select(
+        "id, name, parent_id, is_deleted, created_at, updated_at"
+      )
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return res.status(200).json({
+      message: "Folder restored successfully",
+      folder: {
+        id: restoredFolder.id,
+        name: restoredFolder.name,
+        parentId: restoredFolder.parent_id,
+        isDeleted: restoredFolder.is_deleted,
+        createdAt: restoredFolder.created_at,
+        updatedAt: restoredFolder.updated_at,
+      },
+    });
+  } catch (error) {
+    console.error("Restore folder error:", error);
+
+    return res.status(500).json({
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Unable to restore folder",
+      },
+    });
+  }
+};
+
+
+// ======================================================
+// PERMANENTLY DELETE FOLDER
+// ======================================================
+
+const permanentlyDeleteFolder = async (req, res) => {
+  try {
+    const ownerId = req.user.id;
+    const folderId = req.params.id;
+
+    const { data: folder, error: folderError } = await supabase
+      .from("folders")
+      .select("id, name, owner_id, is_deleted")
+      .eq("id", folderId)
+      .single();
+
+    if (folderError || !folder) {
+      return res.status(404).json({
+        error: {
+          code: "FOLDER_NOT_FOUND",
+          message: "Folder not found",
+        },
+      });
+    }
+
+    if (folder.owner_id !== ownerId) {
+      return res.status(403).json({
+        error: {
+          code: "FORBIDDEN",
+          message:
+            "You do not have permission to permanently delete this folder",
+        },
+      });
+    }
+
+    if (!folder.is_deleted) {
+      return res.status(400).json({
+        error: {
+          code: "NOT_IN_TRASH",
+          message:
+            "Move the folder to Trash before permanently deleting it",
+        },
+      });
+    }
+
+    // IMPORTANT:
+    // This version only permanently deletes an EMPTY folder.
+    // It protects against accidentally deleting nested content.
+
+    const { data: childFolders, error: childFoldersError } =
+      await supabase
+        .from("folders")
+        .select("id")
+        .eq("parent_id", folderId)
+        .limit(1);
+
+    if (childFoldersError) {
+      throw childFoldersError;
+    }
+
+    const { data: childFiles, error: childFilesError } =
+      await supabase
+        .from("files")
+        .select("id")
+        .eq("folder_id", folderId)
+        .limit(1);
+
+    if (childFilesError) {
+      throw childFilesError;
+    }
+
+    if (
+      (childFolders && childFolders.length > 0) ||
+      (childFiles && childFiles.length > 0)
+    ) {
+      return res.status(409).json({
+        error: {
+          code: "FOLDER_NOT_EMPTY",
+          message:
+            "Folder must be empty before it can be permanently deleted",
+        },
+      });
+    }
+
+    const { error: deleteError } = await supabase
+      .from("folders")
+      .delete()
+      .eq("id", folderId);
+
+    if (deleteError) {
+      throw deleteError;
+    }
+
+    return res.status(200).json({
+      message: "Folder permanently deleted",
+    });
+  } catch (error) {
+    console.error("Permanent folder delete error:", error);
+
+    return res.status(500).json({
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Unable to permanently delete folder",
+      },
+    });
+  }
+};
 
 module.exports = {
   createFolder,
@@ -500,4 +703,6 @@ module.exports = {
   getFolderContents,
   updateFolder,
   deleteFolder,
+  restoreFolder,
+  permanentlyDeleteFolder,
 };
