@@ -1,5 +1,9 @@
 const supabase = require("../config/supabase");
 
+const {
+  deleteFileFromStorage,
+} = require("../services/storageService");
+
 const createFolder = async (req, res) => {
   try {
     const { name, parentId = null } = req.body;
@@ -591,7 +595,7 @@ const restoreFolder = async (req, res) => {
 
 
 // ======================================================
-// PERMANENTLY DELETE FOLDER
+// PERMANENTLY DELETE FOLDER RECURSIVELY
 // ======================================================
 
 const permanentlyDeleteFolder = async (req, res) => {
@@ -599,9 +603,15 @@ const permanentlyDeleteFolder = async (req, res) => {
     const ownerId = req.user.id;
     const folderId = req.params.id;
 
+    // --------------------------------------------------
+    // 1. GET TARGET FOLDER
+    // --------------------------------------------------
+
     const { data: folder, error: folderError } = await supabase
       .from("folders")
-      .select("id, name, owner_id, is_deleted")
+      .select(
+        "id, name, owner_id, parent_id, is_deleted"
+      )
       .eq("id", folderId)
       .single();
 
@@ -614,6 +624,10 @@ const permanentlyDeleteFolder = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------
+    // 2. OWNERSHIP CHECK
+    // --------------------------------------------------
+
     if (folder.owner_id !== ownerId) {
       return res.status(403).json({
         error: {
@@ -623,6 +637,10 @@ const permanentlyDeleteFolder = async (req, res) => {
         },
       });
     }
+
+    // --------------------------------------------------
+    // 3. MUST ALREADY BE IN TRASH
+    // --------------------------------------------------
 
     if (!folder.is_deleted) {
       return res.status(400).json({
@@ -634,64 +652,223 @@ const permanentlyDeleteFolder = async (req, res) => {
       });
     }
 
-    // IMPORTANT:
-    // This version only permanently deletes an EMPTY folder.
-    // It protects against accidentally deleting nested content.
+    // --------------------------------------------------
+    // 4. GET ALL USER FOLDERS
+    // --------------------------------------------------
+    //
+    // We load the user's folders once, then determine
+    // which ones belong under the folder being deleted.
+    // --------------------------------------------------
 
-    const { data: childFolders, error: childFoldersError } =
+    const {
+      data: allFolders,
+      error: allFoldersError,
+    } = await supabase
+      .from("folders")
+      .select(
+        "id, name, parent_id, owner_id, is_deleted"
+      )
+      .eq("owner_id", ownerId);
+
+    if (allFoldersError) {
+      throw allFoldersError;
+    }
+
+    // --------------------------------------------------
+    // 5. FIND ALL DESCENDANT FOLDERS
+    // --------------------------------------------------
+
+    const descendantFolderIds = [];
+
+    const findChildren = (parentId) => {
+      const children = (allFolders || []).filter(
+        (item) => item.parent_id === parentId
+      );
+
+      for (const child of children) {
+        descendantFolderIds.push(child.id);
+
+        findChildren(child.id);
+      }
+    };
+
+    findChildren(folderId);
+
+    // Complete folder tree includes selected folder too
+    const folderTreeIds = [
+      folderId,
+      ...descendantFolderIds,
+    ];
+
+    // --------------------------------------------------
+    // 6. GET ALL FILES INSIDE THE FOLDER TREE
+    // --------------------------------------------------
+
+    let files = [];
+
+    if (folderTreeIds.length > 0) {
+      const {
+        data: folderFiles,
+        error: filesError,
+      } = await supabase
+        .from("files")
+        .select(
+          "id, name, storage_path, folder_id, owner_id"
+        )
+        .eq("owner_id", ownerId)
+        .in("folder_id", folderTreeIds);
+
+      if (filesError) {
+        throw filesError;
+      }
+
+      files = folderFiles || [];
+    }
+
+    // --------------------------------------------------
+    // 7. DELETE ACTUAL FILES FROM SUPABASE STORAGE
+    // --------------------------------------------------
+
+    for (const file of files) {
+      if (!file.storage_path) {
+        continue;
+      }
+
+      try {
+        await deleteFileFromStorage(
+          file.storage_path
+        );
+      } catch (storageError) {
+        console.error(
+          `Unable to delete Storage object for file ${file.id}:`,
+          storageError
+        );
+
+        throw storageError;
+      }
+    }
+
+    // --------------------------------------------------
+    // 8. DELETE FILE METADATA FROM DATABASE
+    // --------------------------------------------------
+
+    if (files.length > 0) {
+      const fileIds = files.map(
+        (file) => file.id
+      );
+
+      const { error: deleteFilesError } =
+        await supabase
+          .from("files")
+          .delete()
+          .in("id", fileIds)
+          .eq("owner_id", ownerId);
+
+      if (deleteFilesError) {
+        throw deleteFilesError;
+      }
+    }
+
+    // --------------------------------------------------
+    // 9. DELETE CHILD FOLDERS
+    // --------------------------------------------------
+    //
+    // Important:
+    // Delete deepest folders first so parent/child
+    // foreign-key relationships do not block deletion.
+    // --------------------------------------------------
+
+    const getFolderDepth = (id) => {
+      let depth = 0;
+
+      let current = (allFolders || []).find(
+        (item) => item.id === id
+      );
+
+      const visited = new Set();
+
+      while (
+        current &&
+        current.parent_id &&
+        !visited.has(current.id)
+      ) {
+        visited.add(current.id);
+
+        depth += 1;
+
+        current = (allFolders || []).find(
+          (item) =>
+            item.id === current.parent_id
+        );
+      }
+
+      return depth;
+    };
+
+    const childIdsDeepestFirst =
+      [...descendantFolderIds].sort(
+        (a, b) =>
+          getFolderDepth(b) -
+          getFolderDepth(a)
+      );
+
+    for (const childFolderId of childIdsDeepestFirst) {
+      const { error: childDeleteError } =
+        await supabase
+          .from("folders")
+          .delete()
+          .eq("id", childFolderId)
+          .eq("owner_id", ownerId);
+
+      if (childDeleteError) {
+        throw childDeleteError;
+      }
+    }
+
+    // --------------------------------------------------
+    // 10. DELETE SELECTED FOLDER
+    // --------------------------------------------------
+
+    const { error: folderDeleteError } =
       await supabase
         .from("folders")
-        .select("id")
-        .eq("parent_id", folderId)
-        .limit(1);
+        .delete()
+        .eq("id", folderId)
+        .eq("owner_id", ownerId);
 
-    if (childFoldersError) {
-      throw childFoldersError;
+    if (folderDeleteError) {
+      throw folderDeleteError;
     }
 
-    const { data: childFiles, error: childFilesError } =
-      await supabase
-        .from("files")
-        .select("id")
-        .eq("folder_id", folderId)
-        .limit(1);
-
-    if (childFilesError) {
-      throw childFilesError;
-    }
-
-    if (
-      (childFolders && childFolders.length > 0) ||
-      (childFiles && childFiles.length > 0)
-    ) {
-      return res.status(409).json({
-        error: {
-          code: "FOLDER_NOT_EMPTY",
-          message:
-            "Folder must be empty before it can be permanently deleted",
-        },
-      });
-    }
-
-    const { error: deleteError } = await supabase
-      .from("folders")
-      .delete()
-      .eq("id", folderId);
-
-    if (deleteError) {
-      throw deleteError;
-    }
+    // --------------------------------------------------
+    // 11. SUCCESS
+    // --------------------------------------------------
 
     return res.status(200).json({
-      message: "Folder permanently deleted",
+      message:
+        "Folder and all contents permanently deleted",
+
+      deleted: {
+        folderId,
+        folderName: folder.name,
+
+        foldersDeleted:
+          descendantFolderIds.length + 1,
+
+        filesDeleted: files.length,
+      },
     });
   } catch (error) {
-    console.error("Permanent folder delete error:", error);
+    console.error(
+      "Recursive permanent folder delete error:",
+      error
+    );
 
     return res.status(500).json({
       error: {
         code: "INTERNAL_SERVER_ERROR",
-        message: "Unable to permanently delete folder",
+        message:
+          "Unable to permanently delete folder and its contents",
       },
     });
   }
