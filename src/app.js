@@ -10,6 +10,9 @@ const recentRoutes = require("./routes/recentRoutes");
 const starRoutes = require("./routes/starRoutes");
 const linkShareRoutes = require("./routes/linkShareRoutes");
 
+const storageRoutes =
+  require("./routes/storageRoutes");
+
 const app = express();
 
 // ======================================================
@@ -48,6 +51,8 @@ app.use("/api/recent", recentRoutes);
 app.use("/api/starred", starRoutes);
 
 app.use("/api/links", linkShareRoutes);
+
+app.use("/api/storage", storageRoutes);
 
 // ======================================================
 // GLOBAL ERROR HANDLER
