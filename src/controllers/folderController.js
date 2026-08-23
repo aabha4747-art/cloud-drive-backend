@@ -5,24 +5,172 @@ const {
 } = require("../services/storageService");
 
 // ======================================================
+// HELPER: CHECK FOLDER ACCESS
+// ======================================================
+
+const getFolderAccess = async (
+  folderId,
+  userId
+) => {
+  // Get requested folder
+  const {
+    data: folder,
+    error: folderError,
+  } = await supabase
+    .from("folders")
+    .select(
+      "id, name, owner_id, parent_id, is_deleted, is_starred, created_at, updated_at"
+    )
+    .eq("id", folderId)
+    .maybeSingle();
+
+  if (folderError) {
+    throw folderError;
+  }
+
+  if (!folder || folder.is_deleted) {
+    return {
+      folder: null,
+      hasAccess: false,
+      permission: null,
+      sharedRootId: null,
+    };
+  }
+
+  // Owner always has access
+  if (folder.owner_id === userId) {
+    return {
+      folder,
+      hasAccess: true,
+      permission: "owner",
+      sharedRootId: null,
+    };
+  }
+
+  // ------------------------------------------------------
+  // Check whether this folder OR one of its ancestors
+  // was shared with the current user.
+  //
+  // This is important because if:
+  //
+  // Semester 7
+  //   └── Notes
+  //       └── Chapter 1
+  //
+  // is shared at "Semester 7", the recipient must also be
+  // able to open Notes and Chapter 1.
+  // ------------------------------------------------------
+
+  let currentFolder = folder;
+
+  const visited = new Set();
+
+  while (
+    currentFolder &&
+    !visited.has(currentFolder.id)
+  ) {
+    visited.add(currentFolder.id);
+
+    const {
+      data: share,
+      error: shareError,
+    } = await supabase
+      .from("shares")
+      .select(
+        "id, folder_id, permission"
+      )
+      .eq(
+        "shared_with_user_id",
+        userId
+      )
+      .eq(
+        "folder_id",
+        currentFolder.id
+      )
+      .maybeSingle();
+
+    if (shareError) {
+      throw shareError;
+    }
+
+    if (share) {
+      return {
+        folder,
+        hasAccess: true,
+        permission:
+          share.permission,
+        sharedRootId:
+          currentFolder.id,
+      };
+    }
+
+    if (!currentFolder.parent_id) {
+      break;
+    }
+
+    const {
+      data: parentFolder,
+      error: parentError,
+    } = await supabase
+      .from("folders")
+      .select(
+        "id, owner_id, parent_id, is_deleted"
+      )
+      .eq(
+        "id",
+        currentFolder.parent_id
+      )
+      .maybeSingle();
+
+    if (parentError) {
+      throw parentError;
+    }
+
+    if (
+      !parentFolder ||
+      parentFolder.is_deleted
+    ) {
+      break;
+    }
+
+    currentFolder = parentFolder;
+  }
+
+  return {
+    folder,
+    hasAccess: false,
+    permission: null,
+    sharedRootId: null,
+  };
+};
+
+// ======================================================
 // CREATE FOLDER
 // ======================================================
 
 const createFolder = async (req, res) => {
   try {
-    const { name, parentId = null } = req.body;
+    const {
+      name,
+      parentId = null,
+    } = req.body;
+
     const ownerId = req.user.id;
 
     if (!name || !name.trim()) {
       return res.status(400).json({
         error: {
           code: "VALIDATION_ERROR",
-          message: "Folder name is required",
+          message:
+            "Folder name is required",
         },
       });
     }
 
-    // Check parent folder
+    // ----------------------------------------------------
+    // CHECK PARENT FOLDER
+    // ----------------------------------------------------
+
     if (parentId) {
       const {
         data: parentFolder,
@@ -35,17 +183,24 @@ const createFolder = async (req, res) => {
         .eq("id", parentId)
         .single();
 
-      if (parentError || !parentFolder) {
+      if (
+        parentError ||
+        !parentFolder
+      ) {
         return res.status(404).json({
           error: {
-            code: "PARENT_FOLDER_NOT_FOUND",
-            message: "Parent folder not found",
+            code:
+              "PARENT_FOLDER_NOT_FOUND",
+            message:
+              "Parent folder not found",
           },
         });
       }
 
+      // Creating folders remains OWNER ONLY.
       if (
-        parentFolder.owner_id !== ownerId ||
+        parentFolder.owner_id !==
+          ownerId ||
         parentFolder.is_deleted
       ) {
         return res.status(403).json({
@@ -58,13 +213,17 @@ const createFolder = async (req, res) => {
       }
     }
 
-    // Check duplicate folder
-    let existingFolderQuery = supabase
-      .from("folders")
-      .select("id")
-      .eq("owner_id", ownerId)
-      .eq("name", name.trim())
-      .eq("is_deleted", false);
+    // ----------------------------------------------------
+    // CHECK DUPLICATE
+    // ----------------------------------------------------
+
+    let existingFolderQuery =
+      supabase
+        .from("folders")
+        .select("id")
+        .eq("owner_id", ownerId)
+        .eq("name", name.trim())
+        .eq("is_deleted", false);
 
     if (parentId === null) {
       existingFolderQuery =
@@ -83,7 +242,8 @@ const createFolder = async (req, res) => {
     const {
       data: existingFolder,
       error: existingError,
-    } = await existingFolderQuery.maybeSingle();
+    } =
+      await existingFolderQuery.maybeSingle();
 
     if (existingError) {
       throw existingError;
@@ -99,36 +259,46 @@ const createFolder = async (req, res) => {
       });
     }
 
-    // Create folder
-    const { data: folder, error } =
-      await supabase
-        .from("folders")
-        .insert({
-          name: name.trim(),
-          owner_id: ownerId,
-          parent_id: parentId,
-        })
-        .select(
-          "id, name, owner_id, parent_id, is_deleted, is_starred, created_at, updated_at"
-        )
-        .single();
+    // ----------------------------------------------------
+    // CREATE
+    // ----------------------------------------------------
+
+    const {
+      data: folder,
+      error,
+    } = await supabase
+      .from("folders")
+      .insert({
+        name: name.trim(),
+        owner_id: ownerId,
+        parent_id: parentId,
+      })
+      .select(
+        "id, name, owner_id, parent_id, is_deleted, is_starred, created_at, updated_at"
+      )
+      .single();
 
     if (error) {
       throw error;
     }
 
     return res.status(201).json({
-      message: "Folder created successfully",
+      message:
+        "Folder created successfully",
 
       folder: {
         id: folder.id,
         name: folder.name,
         ownerId: folder.owner_id,
         parentId: folder.parent_id,
-        isDeleted: folder.is_deleted,
-        isStarred: folder.is_starred,
-        createdAt: folder.created_at,
-        updatedAt: folder.updated_at,
+        isDeleted:
+          folder.is_deleted,
+        isStarred:
+          folder.is_starred,
+        createdAt:
+          folder.created_at,
+        updatedAt:
+          folder.updated_at,
       },
     });
   } catch (error) {
@@ -139,8 +309,10 @@ const createFolder = async (req, res) => {
 
     return res.status(500).json({
       error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Unable to create folder",
+        code:
+          "INTERNAL_SERVER_ERROR",
+        message:
+          "Unable to create folder",
       },
     });
   }
@@ -150,7 +322,10 @@ const createFolder = async (req, res) => {
 // GET ROOT CONTENTS
 // ======================================================
 
-const getRootFolders = async (req, res) => {
+const getRootFolders = async (
+  req,
+  res
+) => {
   try {
     const ownerId = req.user.id;
 
@@ -197,11 +372,16 @@ const getRootFolders = async (req, res) => {
         (folder) => ({
           id: folder.id,
           name: folder.name,
-          ownerId: folder.owner_id,
-          parentId: folder.parent_id,
-          isStarred: folder.is_starred,
-          createdAt: folder.created_at,
-          updatedAt: folder.updated_at,
+          ownerId:
+            folder.owner_id,
+          parentId:
+            folder.parent_id,
+          isStarred:
+            folder.is_starred,
+          createdAt:
+            folder.created_at,
+          updatedAt:
+            folder.updated_at,
         })
       ),
 
@@ -209,13 +389,20 @@ const getRootFolders = async (req, res) => {
         (file) => ({
           id: file.id,
           name: file.name,
-          mimeType: file.mime_type,
-          sizeBytes: file.size_bytes,
-          ownerId: file.owner_id,
-          folderId: file.folder_id,
-          isStarred: file.is_starred,
-          createdAt: file.created_at,
-          updatedAt: file.updated_at,
+          mimeType:
+            file.mime_type,
+          sizeBytes:
+            file.size_bytes,
+          ownerId:
+            file.owner_id,
+          folderId:
+            file.folder_id,
+          isStarred:
+            file.is_starred,
+          createdAt:
+            file.created_at,
+          updatedAt:
+            file.updated_at,
         })
       ),
     });
@@ -227,7 +414,8 @@ const getRootFolders = async (req, res) => {
 
     return res.status(500).json({
       error: {
-        code: "INTERNAL_SERVER_ERROR",
+        code:
+          "INTERNAL_SERVER_ERROR",
         message:
           "Unable to fetch root contents",
       },
@@ -237,6 +425,7 @@ const getRootFolders = async (req, res) => {
 
 // ======================================================
 // GET FOLDER CONTENTS
+// OWNER OR SHARED USER
 // ======================================================
 
 const getFolderContents = async (
@@ -244,31 +433,35 @@ const getFolderContents = async (
   res
 ) => {
   try {
-    const ownerId = req.user.id;
+    const userId = req.user.id;
     const folderId = req.params.id;
 
-    const {
-      data: folder,
-      error: folderError,
-    } = await supabase
-      .from("folders")
-      .select(
-        "id, name, owner_id, parent_id, is_starred, created_at, updated_at"
-      )
-      .eq("id", folderId)
-      .eq("is_deleted", false)
-      .single();
+    // ----------------------------------------------------
+    // CHECK ACCESS
+    // ----------------------------------------------------
 
-    if (folderError || !folder) {
+    const {
+      folder,
+      hasAccess,
+      permission,
+      sharedRootId,
+    } = await getFolderAccess(
+      folderId,
+      userId
+    );
+
+    if (!folder) {
       return res.status(404).json({
         error: {
-          code: "FOLDER_NOT_FOUND",
-          message: "Folder not found",
+          code:
+            "FOLDER_NOT_FOUND",
+          message:
+            "Folder not found",
         },
       });
     }
 
-    if (folder.owner_id !== ownerId) {
+    if (!hasAccess) {
       return res.status(403).json({
         error: {
           code: "FORBIDDEN",
@@ -278,7 +471,20 @@ const getFolderContents = async (
       });
     }
 
-    // Child folders
+    // IMPORTANT:
+    // Use the folder OWNER here, not the logged-in user.
+    //
+    // For shared folders:
+    // logged-in user = recipient
+    // folder.owner_id = actual owner
+
+    const folderOwnerId =
+      folder.owner_id;
+
+    // ----------------------------------------------------
+    // CHILD FOLDERS
+    // ----------------------------------------------------
+
     const {
       data: childFolders,
       error: childError,
@@ -287,8 +493,14 @@ const getFolderContents = async (
       .select(
         "id, name, owner_id, parent_id, is_starred, created_at, updated_at"
       )
-      .eq("owner_id", ownerId)
-      .eq("parent_id", folderId)
+      .eq(
+        "owner_id",
+        folderOwnerId
+      )
+      .eq(
+        "parent_id",
+        folderId
+      )
       .eq("is_deleted", false)
       .order("name", {
         ascending: true,
@@ -298,7 +510,10 @@ const getFolderContents = async (
       throw childError;
     }
 
-    // Files
+    // ----------------------------------------------------
+    // FILES
+    // ----------------------------------------------------
+
     const {
       data: files,
       error: filesError,
@@ -307,8 +522,14 @@ const getFolderContents = async (
       .select(
         "id, name, mime_type, size_bytes, owner_id, folder_id, is_starred, created_at, updated_at"
       )
-      .eq("owner_id", ownerId)
-      .eq("folder_id", folderId)
+      .eq(
+        "owner_id",
+        folderOwnerId
+      )
+      .eq(
+        "folder_id",
+        folderId
+      )
       .eq("is_deleted", false)
       .order("name", {
         ascending: true,
@@ -318,44 +539,66 @@ const getFolderContents = async (
       throw filesError;
     }
 
+    const isOwner =
+      folder.owner_id === userId;
+
     return res.status(200).json({
       folder: {
         id: folder.id,
         name: folder.name,
-        ownerId: folder.owner_id,
-        parentId: folder.parent_id,
-        isStarred: folder.is_starred,
-        createdAt: folder.created_at,
-        updatedAt: folder.updated_at,
+        ownerId:
+          folder.owner_id,
+        parentId:
+          folder.parent_id,
+        isStarred:
+          folder.is_starred,
+        createdAt:
+          folder.created_at,
+        updatedAt:
+          folder.updated_at,
       },
 
-      folders: (childFolders || []).map(
-        (childFolder) => ({
-          id: childFolder.id,
-          name: childFolder.name,
-          ownerId: childFolder.owner_id,
-          parentId:
-            childFolder.parent_id,
-          isStarred:
-            childFolder.is_starred,
-          createdAt:
-            childFolder.created_at,
-          updatedAt:
-            childFolder.updated_at,
-        })
-      ),
+      access: {
+        isOwner,
+        permission,
+        sharedRootId,
+      },
+
+      folders: (
+        childFolders || []
+      ).map((childFolder) => ({
+        id: childFolder.id,
+        name: childFolder.name,
+        ownerId:
+          childFolder.owner_id,
+        parentId:
+          childFolder.parent_id,
+        isStarred:
+          childFolder.is_starred,
+        createdAt:
+          childFolder.created_at,
+        updatedAt:
+          childFolder.updated_at,
+      })),
 
       files: (files || []).map(
         (file) => ({
           id: file.id,
           name: file.name,
-          mimeType: file.mime_type,
-          sizeBytes: file.size_bytes,
-          ownerId: file.owner_id,
-          folderId: file.folder_id,
-          isStarred: file.is_starred,
-          createdAt: file.created_at,
-          updatedAt: file.updated_at,
+          mimeType:
+            file.mime_type,
+          sizeBytes:
+            file.size_bytes,
+          ownerId:
+            file.owner_id,
+          folderId:
+            file.folder_id,
+          isStarred:
+            file.is_starred,
+          createdAt:
+            file.created_at,
+          updatedAt:
+            file.updated_at,
         })
       ),
     });
@@ -367,7 +610,8 @@ const getFolderContents = async (
 
     return res.status(500).json({
       error: {
-        code: "INTERNAL_SERVER_ERROR",
+        code:
+          "INTERNAL_SERVER_ERROR",
         message:
           "Unable to fetch folder contents",
       },
@@ -377,9 +621,13 @@ const getFolderContents = async (
 
 // ======================================================
 // UPDATE / RENAME / MOVE FOLDER
+// OWNER ONLY
 // ======================================================
 
-const updateFolder = async (req, res) => {
+const updateFolder = async (
+  req,
+  res
+) => {
   try {
     const ownerId = req.user.id;
     const folderId = req.params.id;
@@ -400,16 +648,24 @@ const updateFolder = async (req, res) => {
       .eq("id", folderId)
       .single();
 
-    if (folderError || !folder) {
+    if (
+      folderError ||
+      !folder
+    ) {
       return res.status(404).json({
         error: {
-          code: "FOLDER_NOT_FOUND",
-          message: "Folder not found",
+          code:
+            "FOLDER_NOT_FOUND",
+          message:
+            "Folder not found",
         },
       });
     }
 
-    if (folder.owner_id !== ownerId) {
+    if (
+      folder.owner_id !==
+      ownerId
+    ) {
       return res.status(403).json({
         error: {
           code: "FORBIDDEN",
@@ -422,7 +678,8 @@ const updateFolder = async (req, res) => {
     if (folder.is_deleted) {
       return res.status(400).json({
         error: {
-          code: "FOLDER_DELETED",
+          code:
+            "FOLDER_DELETED",
           message:
             "Deleted folders cannot be modified",
         },
@@ -431,27 +688,40 @@ const updateFolder = async (req, res) => {
 
     const updates = {};
 
-    // Rename
+    // ----------------------------------------------------
+    // RENAME
+    // ----------------------------------------------------
+
     if (name !== undefined) {
       if (!name.trim()) {
         return res.status(400).json({
           error: {
-            code: "VALIDATION_ERROR",
+            code:
+              "VALIDATION_ERROR",
             message:
               "Folder name cannot be empty",
           },
         });
       }
 
-      updates.name = name.trim();
+      updates.name =
+        name.trim();
     }
 
-    // Move
-    if (parentId !== undefined) {
-      if (parentId === folderId) {
+    // ----------------------------------------------------
+    // MOVE
+    // ----------------------------------------------------
+
+    if (
+      parentId !== undefined
+    ) {
+      if (
+        parentId === folderId
+      ) {
         return res.status(400).json({
           error: {
-            code: "INVALID_PARENT",
+            code:
+              "INVALID_PARENT",
             message:
               "A folder cannot be moved inside itself",
           },
@@ -491,7 +761,8 @@ const updateFolder = async (req, res) => {
         ) {
           return res.status(403).json({
             error: {
-              code: "FORBIDDEN",
+              code:
+                "FORBIDDEN",
               message:
                 "You cannot move this folder there",
             },
@@ -499,7 +770,8 @@ const updateFolder = async (req, res) => {
         }
       }
 
-      updates.parent_id = parentId;
+      updates.parent_id =
+        parentId;
     }
 
     if (
@@ -508,7 +780,8 @@ const updateFolder = async (req, res) => {
     ) {
       return res.status(400).json({
         error: {
-          code: "VALIDATION_ERROR",
+          code:
+            "VALIDATION_ERROR",
           message:
             "Provide name or parentId to update",
         },
@@ -541,7 +814,8 @@ const updateFolder = async (req, res) => {
       folder: {
         id: updatedFolder.id,
         name: updatedFolder.name,
-        ownerId: updatedFolder.owner_id,
+        ownerId:
+          updatedFolder.owner_id,
         parentId:
           updatedFolder.parent_id,
         isDeleted:
@@ -562,8 +836,10 @@ const updateFolder = async (req, res) => {
 
     return res.status(500).json({
       error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Unable to update folder",
+        code:
+          "INTERNAL_SERVER_ERROR",
+        message:
+          "Unable to update folder",
       },
     });
   }
@@ -571,9 +847,13 @@ const updateFolder = async (req, res) => {
 
 // ======================================================
 // SOFT DELETE FOLDER
+// OWNER ONLY
 // ======================================================
 
-const deleteFolder = async (req, res) => {
+const deleteFolder = async (
+  req,
+  res
+) => {
   try {
     const ownerId = req.user.id;
     const folderId = req.params.id;
@@ -589,16 +869,24 @@ const deleteFolder = async (req, res) => {
       .eq("id", folderId)
       .single();
 
-    if (folderError || !folder) {
+    if (
+      folderError ||
+      !folder
+    ) {
       return res.status(404).json({
         error: {
-          code: "FOLDER_NOT_FOUND",
-          message: "Folder not found",
+          code:
+            "FOLDER_NOT_FOUND",
+          message:
+            "Folder not found",
         },
       });
     }
 
-    if (folder.owner_id !== ownerId) {
+    if (
+      folder.owner_id !==
+      ownerId
+    ) {
       return res.status(403).json({
         error: {
           code: "FORBIDDEN",
@@ -611,7 +899,8 @@ const deleteFolder = async (req, res) => {
     if (folder.is_deleted) {
       return res.status(400).json({
         error: {
-          code: "ALREADY_DELETED",
+          code:
+            "ALREADY_DELETED",
           message:
             "Folder is already in Trash",
         },
@@ -625,6 +914,7 @@ const deleteFolder = async (req, res) => {
       .from("folders")
       .update({
         is_deleted: true,
+
         updated_at:
           new Date().toISOString(),
       })
@@ -639,11 +929,13 @@ const deleteFolder = async (req, res) => {
     }
 
     return res.status(200).json({
-      message: "Folder moved to Trash",
+      message:
+        "Folder moved to Trash",
 
       folder: {
         id: deletedFolder.id,
-        name: deletedFolder.name,
+        name:
+          deletedFolder.name,
         isDeleted:
           deletedFolder.is_deleted,
         isStarred:
@@ -660,8 +952,10 @@ const deleteFolder = async (req, res) => {
 
     return res.status(500).json({
       error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Unable to delete folder",
+        code:
+          "INTERNAL_SERVER_ERROR",
+        message:
+          "Unable to delete folder",
       },
     });
   }
@@ -669,9 +963,13 @@ const deleteFolder = async (req, res) => {
 
 // ======================================================
 // RESTORE FOLDER
+// OWNER ONLY
 // ======================================================
 
-const restoreFolder = async (req, res) => {
+const restoreFolder = async (
+  req,
+  res
+) => {
   try {
     const ownerId = req.user.id;
     const folderId = req.params.id;
@@ -687,16 +985,24 @@ const restoreFolder = async (req, res) => {
       .eq("id", folderId)
       .single();
 
-    if (folderError || !folder) {
+    if (
+      folderError ||
+      !folder
+    ) {
       return res.status(404).json({
         error: {
-          code: "FOLDER_NOT_FOUND",
-          message: "Folder not found",
+          code:
+            "FOLDER_NOT_FOUND",
+          message:
+            "Folder not found",
         },
       });
     }
 
-    if (folder.owner_id !== ownerId) {
+    if (
+      folder.owner_id !==
+      ownerId
+    ) {
       return res.status(403).json({
         error: {
           code: "FORBIDDEN",
@@ -709,7 +1015,8 @@ const restoreFolder = async (req, res) => {
     if (!folder.is_deleted) {
       return res.status(400).json({
         error: {
-          code: "NOT_IN_TRASH",
+          code:
+            "NOT_IN_TRASH",
           message:
             "Folder is not in Trash",
         },
@@ -724,15 +1031,21 @@ const restoreFolder = async (req, res) => {
         data: parentFolder,
       } = await supabase
         .from("folders")
-        .select("id, is_deleted")
-        .eq("id", restoreParentId)
+        .select(
+          "id, is_deleted"
+        )
+        .eq(
+          "id",
+          restoreParentId
+        )
         .maybeSingle();
 
       if (
         !parentFolder ||
         parentFolder.is_deleted
       ) {
-        restoreParentId = null;
+        restoreParentId =
+          null;
       }
     }
 
@@ -743,7 +1056,9 @@ const restoreFolder = async (req, res) => {
       .from("folders")
       .update({
         is_deleted: false,
-        parent_id: restoreParentId,
+        parent_id:
+          restoreParentId,
+
         updated_at:
           new Date().toISOString(),
       })
@@ -762,8 +1077,10 @@ const restoreFolder = async (req, res) => {
         "Folder restored successfully",
 
       folder: {
-        id: restoredFolder.id,
-        name: restoredFolder.name,
+        id:
+          restoredFolder.id,
+        name:
+          restoredFolder.name,
         parentId:
           restoredFolder.parent_id,
         isDeleted:
@@ -784,7 +1101,8 @@ const restoreFolder = async (req, res) => {
 
     return res.status(500).json({
       error: {
-        code: "INTERNAL_SERVER_ERROR",
+        code:
+          "INTERNAL_SERVER_ERROR",
         message:
           "Unable to restore folder",
       },
@@ -794,259 +1112,347 @@ const restoreFolder = async (req, res) => {
 
 // ======================================================
 // PERMANENTLY DELETE FOLDER RECURSIVELY
+// OWNER ONLY
 // ======================================================
 
-const permanentlyDeleteFolder = async (
-  req,
-  res
-) => {
-  try {
-    const ownerId = req.user.id;
-    const folderId = req.params.id;
+const permanentlyDeleteFolder =
+  async (req, res) => {
+    try {
+      const ownerId =
+        req.user.id;
 
-    // Get target folder
-    const {
-      data: folder,
-      error: folderError,
-    } = await supabase
-      .from("folders")
-      .select(
-        "id, name, owner_id, parent_id, is_deleted"
-      )
-      .eq("id", folderId)
-      .single();
+      const folderId =
+        req.params.id;
 
-    if (folderError || !folder) {
-      return res.status(404).json({
-        error: {
-          code: "FOLDER_NOT_FOUND",
-          message: "Folder not found",
-        },
-      });
-    }
-
-    if (folder.owner_id !== ownerId) {
-      return res.status(403).json({
-        error: {
-          code: "FORBIDDEN",
-          message:
-            "You do not have permission to permanently delete this folder",
-        },
-      });
-    }
-
-    if (!folder.is_deleted) {
-      return res.status(400).json({
-        error: {
-          code: "NOT_IN_TRASH",
-          message:
-            "Move the folder to Trash before permanently deleting it",
-        },
-      });
-    }
-
-    // Get all folders
-    const {
-      data: allFolders,
-      error: allFoldersError,
-    } = await supabase
-      .from("folders")
-      .select(
-        "id, name, parent_id, owner_id, is_deleted"
-      )
-      .eq("owner_id", ownerId);
-
-    if (allFoldersError) {
-      throw allFoldersError;
-    }
-
-    // Find descendants
-    const descendantFolderIds = [];
-
-    const findChildren = (parentId) => {
-      const children = (
-        allFolders || []
-      ).filter(
-        (item) =>
-          item.parent_id === parentId
-      );
-
-      for (const child of children) {
-        descendantFolderIds.push(
-          child.id
-        );
-
-        findChildren(child.id);
-      }
-    };
-
-    findChildren(folderId);
-
-    const folderTreeIds = [
-      folderId,
-      ...descendantFolderIds,
-    ];
-
-    // Get all files in tree
-    const {
-      data: folderFiles,
-      error: filesError,
-    } = await supabase
-      .from("files")
-      .select(
-        "id, name, storage_path, folder_id, owner_id"
-      )
-      .eq("owner_id", ownerId)
-      .in(
-        "folder_id",
-        folderTreeIds
-      );
-
-    if (filesError) {
-      throw filesError;
-    }
-
-    const files =
-      folderFiles || [];
-
-    // Delete Storage objects
-    for (const file of files) {
-      if (!file.storage_path) {
-        continue;
-      }
-
-      await deleteFileFromStorage(
-        file.storage_path
-      );
-    }
-
-    // Delete file rows
-    if (files.length > 0) {
-      const fileIds = files.map(
-        (file) => file.id
-      );
+      // --------------------------------------------------
+      // GET TARGET
+      // --------------------------------------------------
 
       const {
-        error: deleteFilesError,
-      } = await supabase
-        .from("files")
-        .delete()
-        .in("id", fileIds)
-        .eq("owner_id", ownerId);
-
-      if (deleteFilesError) {
-        throw deleteFilesError;
-      }
-    }
-
-    // Determine depth
-    const getFolderDepth = (id) => {
-      let depth = 0;
-
-      let current = (
-        allFolders || []
-      ).find(
-        (item) => item.id === id
-      );
-
-      const visited = new Set();
-
-      while (
-        current &&
-        current.parent_id &&
-        !visited.has(current.id)
-      ) {
-        visited.add(current.id);
-
-        depth += 1;
-
-        current = (
-          allFolders || []
-        ).find(
-          (item) =>
-            item.id ===
-            current.parent_id
-        );
-      }
-
-      return depth;
-    };
-
-    const childIdsDeepestFirst =
-      [...descendantFolderIds].sort(
-        (a, b) =>
-          getFolderDepth(b) -
-          getFolderDepth(a)
-      );
-
-    // Delete children deepest first
-    for (
-      const childFolderId
-      of childIdsDeepestFirst
-    ) {
-      const {
-        error: childDeleteError,
+        data: folder,
+        error: folderError,
       } = await supabase
         .from("folders")
-        .delete()
-        .eq(
-          "id",
-          childFolderId
+        .select(
+          "id, name, owner_id, parent_id, is_deleted"
+        )
+        .eq("id", folderId)
+        .single();
+
+      if (
+        folderError ||
+        !folder
+      ) {
+        return res.status(404).json({
+          error: {
+            code:
+              "FOLDER_NOT_FOUND",
+            message:
+              "Folder not found",
+          },
+        });
+      }
+
+      if (
+        folder.owner_id !==
+        ownerId
+      ) {
+        return res.status(403).json({
+          error: {
+            code: "FORBIDDEN",
+            message:
+              "You do not have permission to permanently delete this folder",
+          },
+        });
+      }
+
+      if (!folder.is_deleted) {
+        return res.status(400).json({
+          error: {
+            code:
+              "NOT_IN_TRASH",
+            message:
+              "Move the folder to Trash before permanently deleting it",
+          },
+        });
+      }
+
+      // --------------------------------------------------
+      // GET ALL OWNER FOLDERS
+      // --------------------------------------------------
+
+      const {
+        data: allFolders,
+        error: allFoldersError,
+      } = await supabase
+        .from("folders")
+        .select(
+          "id, name, parent_id, owner_id, is_deleted"
         )
         .eq(
           "owner_id",
           ownerId
         );
 
-      if (childDeleteError) {
-        throw childDeleteError;
+      if (allFoldersError) {
+        throw allFoldersError;
       }
-    }
 
-    // Delete selected folder
-    const {
-      error: folderDeleteError,
-    } = await supabase
-      .from("folders")
-      .delete()
-      .eq("id", folderId)
-      .eq("owner_id", ownerId);
+      // --------------------------------------------------
+      // FIND DESCENDANTS
+      // --------------------------------------------------
 
-    if (folderDeleteError) {
-      throw folderDeleteError;
-    }
+      const descendantFolderIds =
+        [];
 
-    return res.status(200).json({
-      message:
-        "Folder and all contents permanently deleted",
+      const findChildren = (
+        parentId
+      ) => {
+        const children = (
+          allFolders || []
+        ).filter(
+          (item) =>
+            item.parent_id ===
+            parentId
+        );
 
-      deleted: {
+        for (
+          const child of children
+        ) {
+          descendantFolderIds.push(
+            child.id
+          );
+
+          findChildren(
+            child.id
+          );
+        }
+      };
+
+      findChildren(folderId);
+
+      const folderTreeIds = [
         folderId,
-        folderName: folder.name,
+        ...descendantFolderIds,
+      ];
 
-        foldersDeleted:
-          descendantFolderIds.length +
-          1,
+      // --------------------------------------------------
+      // FILES IN TREE
+      // --------------------------------------------------
 
-        filesDeleted:
-          files.length,
-      },
-    });
-  } catch (error) {
-    console.error(
-      "Recursive permanent folder delete error:",
-      error
-    );
+      const {
+        data: folderFiles,
+        error: filesError,
+      } = await supabase
+        .from("files")
+        .select(
+          "id, name, storage_path, folder_id, owner_id"
+        )
+        .eq(
+          "owner_id",
+          ownerId
+        )
+        .in(
+          "folder_id",
+          folderTreeIds
+        );
 
-    return res.status(500).json({
-      error: {
-        code: "INTERNAL_SERVER_ERROR",
+      if (filesError) {
+        throw filesError;
+      }
+
+      const files =
+        folderFiles || [];
+
+      // --------------------------------------------------
+      // DELETE STORAGE OBJECTS
+      // --------------------------------------------------
+
+      for (const file of files) {
+        if (
+          !file.storage_path
+        ) {
+          continue;
+        }
+
+        await deleteFileFromStorage(
+          file.storage_path
+        );
+      }
+
+      // --------------------------------------------------
+      // DELETE FILE ROWS
+      // --------------------------------------------------
+
+      if (files.length > 0) {
+        const fileIds =
+          files.map(
+            (file) =>
+              file.id
+          );
+
+        const {
+          error:
+            deleteFilesError,
+        } = await supabase
+          .from("files")
+          .delete()
+          .in("id", fileIds)
+          .eq(
+            "owner_id",
+            ownerId
+          );
+
+        if (
+          deleteFilesError
+        ) {
+          throw deleteFilesError;
+        }
+      }
+
+      // --------------------------------------------------
+      // DETERMINE DEPTH
+      // --------------------------------------------------
+
+      const getFolderDepth = (
+        id
+      ) => {
+        let depth = 0;
+
+        let current = (
+          allFolders || []
+        ).find(
+          (item) =>
+            item.id === id
+        );
+
+        const visited =
+          new Set();
+
+        while (
+          current &&
+          current.parent_id &&
+          !visited.has(
+            current.id
+          )
+        ) {
+          visited.add(
+            current.id
+          );
+
+          depth += 1;
+
+          current = (
+            allFolders || []
+          ).find(
+            (item) =>
+              item.id ===
+              current.parent_id
+          );
+        }
+
+        return depth;
+      };
+
+      const childIdsDeepestFirst =
+        [
+          ...descendantFolderIds,
+        ].sort(
+          (a, b) =>
+            getFolderDepth(b) -
+            getFolderDepth(a)
+        );
+
+      // --------------------------------------------------
+      // DELETE CHILDREN
+      // --------------------------------------------------
+
+      for (
+        const childFolderId
+        of childIdsDeepestFirst
+      ) {
+        const {
+          error:
+            childDeleteError,
+        } = await supabase
+          .from("folders")
+          .delete()
+          .eq(
+            "id",
+            childFolderId
+          )
+          .eq(
+            "owner_id",
+            ownerId
+          );
+
+        if (
+          childDeleteError
+        ) {
+          throw childDeleteError;
+        }
+      }
+
+      // --------------------------------------------------
+      // DELETE TARGET
+      // --------------------------------------------------
+
+      const {
+        error:
+          folderDeleteError,
+      } = await supabase
+        .from("folders")
+        .delete()
+        .eq(
+          "id",
+          folderId
+        )
+        .eq(
+          "owner_id",
+          ownerId
+        );
+
+      if (
+        folderDeleteError
+      ) {
+        throw folderDeleteError;
+      }
+
+      return res.status(200).json({
         message:
-          "Unable to permanently delete folder and its contents",
-      },
-    });
-  }
-};
+          "Folder and all contents permanently deleted",
+
+        deleted: {
+          folderId,
+
+          folderName:
+            folder.name,
+
+          foldersDeleted:
+            descendantFolderIds.length +
+            1,
+
+          filesDeleted:
+            files.length,
+        },
+      });
+    } catch (error) {
+      console.error(
+        "Recursive permanent folder delete error:",
+        error
+      );
+
+      return res.status(500).json({
+        error: {
+          code:
+            "INTERNAL_SERVER_ERROR",
+
+          message:
+            "Unable to permanently delete folder and its contents",
+        },
+      });
+    }
+  };
 
 // ======================================================
 // EXPORTS
