@@ -8,6 +8,75 @@ const {
 } = require("../services/storageService");
 
 // ======================================================
+// HELPER: CHECK INHERITED SHARED-FOLDER ACCESS
+// ======================================================
+
+const getInheritedFolderPermission = async ({
+  folderId,
+  userId,
+}) => {
+  let currentFolderId = folderId;
+
+  const visited = new Set();
+
+  while (currentFolderId) {
+    if (visited.has(currentFolderId)) {
+      break;
+    }
+
+    visited.add(currentFolderId);
+
+    // Check whether this folder is shared
+    // directly with the current user
+    const {
+      data: share,
+      error: shareError,
+    } = await supabase
+      .from("shares")
+      .select("id, permission")
+      .eq("folder_id", currentFolderId)
+      .eq("shared_with_id", userId)
+      .maybeSingle();
+
+    if (shareError) {
+      throw shareError;
+    }
+
+    if (share) {
+      return share.permission;
+    }
+
+    // Move upward through the folder tree
+    const {
+      data: folder,
+      error: folderError,
+    } = await supabase
+      .from("folders")
+      .select(
+        "id, parent_id, is_deleted"
+      )
+      .eq("id", currentFolderId)
+      .maybeSingle();
+
+    if (folderError) {
+      throw folderError;
+    }
+
+    if (
+      !folder ||
+      folder.is_deleted
+    ) {
+      return null;
+    }
+
+    currentFolderId =
+      folder.parent_id;
+  }
+
+  return null;
+};
+
+// ======================================================
 // UPLOAD FILE
 // ======================================================
 
@@ -162,7 +231,8 @@ const uploadFile = async (req, res) => {
 
     return res.status(500).json({
       error: {
-        code: "INTERNAL_SERVER_ERROR",
+        code:
+          "INTERNAL_SERVER_ERROR",
         message:
           "Unable to upload file",
       },
@@ -172,6 +242,12 @@ const uploadFile = async (req, res) => {
 
 // ======================================================
 // GET FILE + SIGNED URL + RECENT
+//
+// ACCESS:
+// 1. Owner
+// 2. Direct file share
+// 3. File inside shared folder
+// 4. File inside nested child of shared folder
 // ======================================================
 
 const getFile = async (req, res) => {
@@ -208,13 +284,24 @@ const getFile = async (req, res) => {
       });
     }
 
-    // Share access check
+    // ==================================================
+    // ACCESS CONTROL
+    // ==================================================
+
+    let permission = "owner";
+    let accessType = "owner";
+
     if (
       file.owner_id !== userId
     ) {
+      // -----------------------------------------------
+      // FIRST:
+      // Check whether the FILE itself is shared
+      // -----------------------------------------------
+
       const {
-        data: share,
-        error: shareError,
+        data: directShare,
+        error: directShareError,
       } = await supabase
         .from("shares")
         .select(
@@ -227,27 +314,70 @@ const getFile = async (req, res) => {
         )
         .maybeSingle();
 
-      if (shareError) {
-        throw shareError;
+      if (directShareError) {
+        throw directShareError;
       }
 
-      if (!share) {
-        return res.status(403).json({
-          error: {
-            code: "FORBIDDEN",
-            message:
-              "You do not have access to this file",
-          },
-        });
+      if (directShare) {
+        permission =
+          directShare.permission;
+
+        accessType =
+          "direct-file-share";
+      } else {
+        // ---------------------------------------------
+        // SECOND:
+        // Check containing folder + ancestors
+        // ---------------------------------------------
+
+        if (!file.folder_id) {
+          return res.status(403).json({
+            error: {
+              code: "FORBIDDEN",
+              message:
+                "You do not have access to this file",
+            },
+          });
+        }
+
+        const inheritedPermission =
+          await getInheritedFolderPermission({
+            folderId:
+              file.folder_id,
+
+            userId,
+          });
+
+        if (
+          !inheritedPermission
+        ) {
+          return res.status(403).json({
+            error: {
+              code: "FORBIDDEN",
+              message:
+                "You do not have access to this file",
+            },
+          });
+        }
+
+        permission =
+          inheritedPermission;
+
+        accessType =
+          "shared-folder";
       }
     }
 
-    // Mark recent
+    // ==================================================
+    // MARK RECENT
+    // ==================================================
+
     const accessedAt =
       new Date().toISOString();
 
     const {
-      error: accessUpdateError,
+      error:
+        accessUpdateError,
     } = await supabase
       .from("files")
       .update({
@@ -256,38 +386,67 @@ const getFile = async (req, res) => {
       })
       .eq("id", fileId);
 
-    if (accessUpdateError) {
+    if (
+      accessUpdateError
+    ) {
       console.error(
         "Unable to update last_accessed_at:",
         accessUpdateError
       );
     }
 
-    // Signed URL
+    // ==================================================
+    // SIGNED DOWNLOAD URL
+    // ==================================================
+
     const signedUrl =
       await createSignedDownloadUrl(
         file.storage_path,
         300
       );
 
+    // ==================================================
+    // RESPONSE
+    // ==================================================
+
     return res.status(200).json({
       file: {
         id: file.id,
-        name: file.name,
-        mimeType: file.mime_type,
-        sizeBytes: file.size_bytes,
-        folderId: file.folder_id,
+
+        name:
+          file.name,
+
+        mimeType:
+          file.mime_type,
+
+        sizeBytes:
+          file.size_bytes,
+
+        ownerId:
+          file.owner_id,
+
+        folderId:
+          file.folder_id,
+
         isStarred:
           file.is_starred,
+
         createdAt:
           file.created_at,
+
         updatedAt:
           file.updated_at,
+
         lastAccessedAt:
           accessedAt,
+
+        permission,
+
+        accessType,
       },
 
       signedUrl,
+
       expiresIn: 300,
     });
   } catch (error) {
@@ -298,7 +457,8 @@ const getFile = async (req, res) => {
 
     return res.status(500).json({
       error: {
-        code: "INTERNAL_SERVER_ERROR",
+        code:
+          "INTERNAL_SERVER_ERROR",
         message:
           "Unable to fetch file",
       },
@@ -308,6 +468,7 @@ const getFile = async (req, res) => {
 
 // ======================================================
 // UPDATE / RENAME / MOVE FILE
+// OWNER ONLY
 // ======================================================
 
 const updateFile = async (
@@ -315,8 +476,11 @@ const updateFile = async (
   res
 ) => {
   try {
-    const ownerId = req.user.id;
-    const fileId = req.params.id;
+    const ownerId =
+      req.user.id;
+
+    const fileId =
+      req.params.id;
 
     const {
       name,
@@ -375,7 +539,8 @@ const updateFile = async (
       if (!name.trim()) {
         return res.status(400).json({
           error: {
-            code: "VALIDATION_ERROR",
+            code:
+              "VALIDATION_ERROR",
             message:
               "File name cannot be empty",
           },
@@ -443,7 +608,8 @@ const updateFile = async (
     ) {
       return res.status(400).json({
         error: {
-          code: "VALIDATION_ERROR",
+          code:
+            "VALIDATION_ERROR",
           message:
             "Provide name or folderId to update",
         },
@@ -475,21 +641,31 @@ const updateFile = async (
 
       file: {
         id: updatedFile.id,
-        name: updatedFile.name,
+
+        name:
+          updatedFile.name,
+
         mimeType:
           updatedFile.mime_type,
+
         sizeBytes:
           updatedFile.size_bytes,
+
         ownerId:
           updatedFile.owner_id,
+
         folderId:
           updatedFile.folder_id,
+
         isDeleted:
           updatedFile.is_deleted,
+
         isStarred:
           updatedFile.is_starred,
+
         createdAt:
           updatedFile.created_at,
+
         updatedAt:
           updatedFile.updated_at,
       },
@@ -502,7 +678,8 @@ const updateFile = async (
 
     return res.status(500).json({
       error: {
-        code: "INTERNAL_SERVER_ERROR",
+        code:
+          "INTERNAL_SERVER_ERROR",
         message:
           "Unable to update file",
       },
@@ -512,6 +689,7 @@ const updateFile = async (
 
 // ======================================================
 // SOFT DELETE FILE
+// OWNER ONLY
 // ======================================================
 
 const deleteFile = async (
@@ -519,8 +697,11 @@ const deleteFile = async (
   res
 ) => {
   try {
-    const ownerId = req.user.id;
-    const fileId = req.params.id;
+    const ownerId =
+      req.user.id;
+
+    const fileId =
+      req.params.id;
 
     const {
       data: file,
@@ -560,7 +741,8 @@ const deleteFile = async (
     if (file.is_deleted) {
       return res.status(400).json({
         error: {
-          code: "ALREADY_DELETED",
+          code:
+            "ALREADY_DELETED",
           message:
             "File is already in Trash",
         },
@@ -574,6 +756,7 @@ const deleteFile = async (
       .from("files")
       .update({
         is_deleted: true,
+
         updated_at:
           new Date().toISOString(),
       })
@@ -592,12 +775,18 @@ const deleteFile = async (
         "File moved to Trash",
 
       file: {
-        id: deletedFile.id,
-        name: deletedFile.name,
+        id:
+          deletedFile.id,
+
+        name:
+          deletedFile.name,
+
         isDeleted:
           deletedFile.is_deleted,
+
         isStarred:
           deletedFile.is_starred,
+
         updatedAt:
           deletedFile.updated_at,
       },
@@ -610,7 +799,8 @@ const deleteFile = async (
 
     return res.status(500).json({
       error: {
-        code: "INTERNAL_SERVER_ERROR",
+        code:
+          "INTERNAL_SERVER_ERROR",
         message:
           "Unable to delete file",
       },
@@ -627,7 +817,8 @@ const getTrash = async (
   res
 ) => {
   try {
-    const ownerId = req.user.id;
+    const ownerId =
+      req.user.id;
 
     // Deleted files
     const {
@@ -638,11 +829,20 @@ const getTrash = async (
       .select(
         "id, name, mime_type, size_bytes, folder_id, is_deleted, is_starred, created_at, updated_at"
       )
-      .eq("owner_id", ownerId)
-      .eq("is_deleted", true)
-      .order("updated_at", {
-        ascending: false,
-      });
+      .eq(
+        "owner_id",
+        ownerId
+      )
+      .eq(
+        "is_deleted",
+        true
+      )
+      .order(
+        "updated_at",
+        {
+          ascending: false,
+        }
+      );
 
     if (filesError) {
       throw filesError;
@@ -657,53 +857,82 @@ const getTrash = async (
       .select(
         "id, name, parent_id, owner_id, is_deleted, is_starred, created_at, updated_at"
       )
-      .eq("owner_id", ownerId)
-      .eq("is_deleted", true)
-      .order("updated_at", {
-        ascending: false,
-      });
+      .eq(
+        "owner_id",
+        ownerId
+      )
+      .eq(
+        "is_deleted",
+        true
+      )
+      .order(
+        "updated_at",
+        {
+          ascending: false,
+        }
+      );
 
     if (foldersError) {
       throw foldersError;
     }
 
     return res.status(200).json({
-      files: (files || []).map(
-        (file) => ({
-          id: file.id,
-          name: file.name,
-          mimeType: file.mime_type,
-          sizeBytes: file.size_bytes,
-          folderId: file.folder_id,
-          isDeleted:
-            file.is_deleted,
-          isStarred:
-            file.is_starred,
-          createdAt:
-            file.created_at,
-          updatedAt:
-            file.updated_at,
-        })
-      ),
+      files: (
+        files || []
+      ).map((file) => ({
+        id: file.id,
 
-      folders: (folders || []).map(
-        (folder) => ({
-          id: folder.id,
-          name: folder.name,
-          parentId:
-            folder.parent_id,
-          ownerId:
-            folder.owner_id,
-          isDeleted:
-            folder.is_deleted,
-          isStarred:
-            folder.is_starred,
-          createdAt:
-            folder.created_at,
-          updatedAt:
-            folder.updated_at,
-        })
-      ),
+        name: file.name,
+
+        mimeType:
+          file.mime_type,
+
+        sizeBytes:
+          file.size_bytes,
+
+        folderId:
+          file.folder_id,
+
+        isDeleted:
+          file.is_deleted,
+
+        isStarred:
+          file.is_starred,
+
+        createdAt:
+          file.created_at,
+
+        updatedAt:
+          file.updated_at,
+      })),
+
+      folders: (
+        folders || []
+      ).map((folder) => ({
+        id:
+          folder.id,
+
+        name:
+          folder.name,
+
+        parentId:
+          folder.parent_id,
+
+        ownerId:
+          folder.owner_id,
+
+        isDeleted:
+          folder.is_deleted,
+
+        isStarred:
+          folder.is_starred,
+
+        createdAt:
+          folder.created_at,
+
+        updatedAt:
+          folder.updated_at,
+      })),
     });
   } catch (error) {
     console.error(
@@ -713,7 +942,8 @@ const getTrash = async (
 
     return res.status(500).json({
       error: {
-        code: "INTERNAL_SERVER_ERROR",
+        code:
+          "INTERNAL_SERVER_ERROR",
         message:
           "Unable to fetch Trash",
       },
@@ -723,6 +953,7 @@ const getTrash = async (
 
 // ======================================================
 // RESTORE FILE
+// OWNER ONLY
 // ======================================================
 
 const restoreFile = async (
@@ -730,8 +961,11 @@ const restoreFile = async (
   res
 ) => {
   try {
-    const ownerId = req.user.id;
-    const fileId = req.params.id;
+    const ownerId =
+      req.user.id;
+
+    const fileId =
+      req.params.id;
 
     const {
       data: file,
@@ -750,8 +984,10 @@ const restoreFile = async (
     ) {
       return res.status(404).json({
         error: {
-          code: "FILE_NOT_FOUND",
-          message: "File not found",
+          code:
+            "FILE_NOT_FOUND",
+          message:
+            "File not found",
         },
       });
     }
@@ -771,7 +1007,8 @@ const restoreFile = async (
     if (!file.is_deleted) {
       return res.status(400).json({
         error: {
-          code: "NOT_IN_TRASH",
+          code:
+            "NOT_IN_TRASH",
           message:
             "File is not in Trash",
         },
@@ -789,14 +1026,18 @@ const restoreFile = async (
         .select(
           "id, is_deleted"
         )
-        .eq("id", restoreFolderId)
+        .eq(
+          "id",
+          restoreFolderId
+        )
         .maybeSingle();
 
       if (
         !folder ||
         folder.is_deleted
       ) {
-        restoreFolderId = null;
+        restoreFolderId =
+          null;
       }
     }
 
@@ -807,7 +1048,10 @@ const restoreFile = async (
       .from("files")
       .update({
         is_deleted: false,
-        folder_id: restoreFolderId,
+
+        folder_id:
+          restoreFolderId,
+
         updated_at:
           new Date().toISOString(),
       })
@@ -826,14 +1070,21 @@ const restoreFile = async (
         "File restored successfully",
 
       file: {
-        id: restoredFile.id,
-        name: restoredFile.name,
+        id:
+          restoredFile.id,
+
+        name:
+          restoredFile.name,
+
         folderId:
           restoredFile.folder_id,
+
         isDeleted:
           restoredFile.is_deleted,
+
         isStarred:
           restoredFile.is_starred,
+
         updatedAt:
           restoredFile.updated_at,
       },
@@ -846,7 +1097,8 @@ const restoreFile = async (
 
     return res.status(500).json({
       error: {
-        code: "INTERNAL_SERVER_ERROR",
+        code:
+          "INTERNAL_SERVER_ERROR",
         message:
           "Unable to restore file",
       },
@@ -856,6 +1108,7 @@ const restoreFile = async (
 
 // ======================================================
 // PERMANENT DELETE FILE
+// OWNER ONLY
 // ======================================================
 
 const permanentlyDeleteFile =
@@ -898,7 +1151,8 @@ const permanentlyDeleteFile =
       ) {
         return res.status(403).json({
           error: {
-            code: "FORBIDDEN",
+            code:
+              "FORBIDDEN",
             message:
               "You do not have permission to permanently delete this file",
           },
@@ -908,7 +1162,8 @@ const permanentlyDeleteFile =
       if (!file.is_deleted) {
         return res.status(400).json({
           error: {
-            code: "NOT_IN_TRASH",
+            code:
+              "NOT_IN_TRASH",
             message:
               "Move the file to Trash before permanently deleting it",
           },
