@@ -15,6 +15,11 @@ const {
   getSpreadsheet,
   updateSpreadsheetContent,
 
+  // Cloud presentations
+  createPresentation,
+  getPresentation,
+  updatePresentationContent,
+
   // Normal files
   getFile,
   updateFile,
@@ -118,6 +123,31 @@ router.get(
 router.patch(
   "/spreadsheets/:id/content",
   updateSpreadsheetContent
+);
+
+// ======================================================
+// CLOUD PRESENTATIONS
+//
+// IMPORTANT:
+// These must also stay ABOVE "/:id".
+// ======================================================
+
+// Create presentation
+router.post(
+  "/presentations",
+  createPresentation
+);
+
+// Get presentation
+router.get(
+  "/presentations/:id",
+  getPresentation
+);
+
+// Save presentation
+router.patch(
+  "/presentations/:id/content",
+  updatePresentationContent
 );
 
 // ======================================================
