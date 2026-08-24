@@ -35,14 +35,8 @@ const getInheritedFolderPermission = async ({
     } = await supabase
       .from("shares")
       .select("id, permission")
-      .eq(
-        "folder_id",
-        currentFolderId
-      )
-      .eq(
-        "shared_with_id",
-        userId
-      )
+      .eq("folder_id", currentFolderId)
+      .eq("shared_with_id", userId)
       .maybeSingle();
 
     if (shareError) {
@@ -58,28 +52,19 @@ const getInheritedFolderPermission = async ({
       error: folderError,
     } = await supabase
       .from("folders")
-      .select(
-        "id, parent_id, is_deleted"
-      )
-      .eq(
-        "id",
-        currentFolderId
-      )
+      .select("id, parent_id, is_deleted")
+      .eq("id", currentFolderId)
       .maybeSingle();
 
     if (folderError) {
       throw folderError;
     }
 
-    if (
-      !folder ||
-      folder.is_deleted
-    ) {
+    if (!folder || folder.is_deleted) {
       return null;
     }
 
-    currentFolderId =
-      folder.parent_id;
+    currentFolderId = folder.parent_id;
   }
 
   return null;
@@ -101,10 +86,8 @@ const getFileAccess = async ({
     };
   }
 
-  // Owner
-  if (
-    file.owner_id === userId
-  ) {
+  // OWNER
+  if (file.owner_id === userId) {
     return {
       hasAccess: true,
       permission: "owner",
@@ -112,7 +95,7 @@ const getFileAccess = async ({
     };
   }
 
-  // Direct file share
+  // DIRECT FILE SHARE
   const {
     data: directShare,
     error: directShareError,
@@ -120,10 +103,7 @@ const getFileAccess = async ({
     .from("shares")
     .select("id, permission")
     .eq("file_id", file.id)
-    .eq(
-      "shared_with_id",
-      userId
-    )
+    .eq("shared_with_id", userId)
     .maybeSingle();
 
   if (directShareError) {
@@ -133,29 +113,24 @@ const getFileAccess = async ({
   if (directShare) {
     return {
       hasAccess: true,
-      permission:
-        directShare.permission,
-      accessType:
-        "direct-file-share",
+      permission: directShare.permission,
+      accessType: "direct-file-share",
     };
   }
 
-  // Inherited from shared folder
+  // INHERITED FROM SHARED FOLDER
   if (file.folder_id) {
     const inheritedPermission =
       await getInheritedFolderPermission({
-        folderId:
-          file.folder_id,
+        folderId: file.folder_id,
         userId,
       });
 
     if (inheritedPermission) {
       return {
         hasAccess: true,
-        permission:
-          inheritedPermission,
-        accessType:
-          "shared-folder",
+        permission: inheritedPermission,
+        accessType: "shared-folder",
       };
     }
   }
@@ -168,7 +143,8 @@ const getFileAccess = async ({
 };
 
 // ======================================================
-// HELPER: VALIDATE TARGET FOLDER FOR OWNER
+// HELPER: VALIDATE TARGET FOLDER
+// OWNER ONLY
 // ======================================================
 
 const validateOwnedTargetFolder = async ({
@@ -189,9 +165,7 @@ const validateOwnedTargetFolder = async ({
     error,
   } = await supabase
     .from("folders")
-    .select(
-      "id, owner_id, is_deleted"
-    )
+    .select("id, owner_id, is_deleted")
     .eq("id", folderId)
     .maybeSingle();
 
@@ -205,17 +179,14 @@ const validateOwnedTargetFolder = async ({
       folder: null,
       status: 404,
       error: {
-        code:
-          "FOLDER_NOT_FOUND",
-        message:
-          "Target folder not found",
+        code: "FOLDER_NOT_FOUND",
+        message: "Target folder not found",
       },
     };
   }
 
   if (
-    folder.owner_id !==
-      ownerId ||
+    folder.owner_id !== ownerId ||
     folder.is_deleted
   ) {
     return {
@@ -239,36 +210,26 @@ const validateOwnedTargetFolder = async ({
 };
 
 // ======================================================
-// UPLOAD FILE
-// OWNER ONLY
+// UPLOAD SINGLE FILE
 // ======================================================
 
-const uploadFile = async (
-  req,
-  res
-) => {
-  let uploadedStoragePath =
-    null;
+const uploadFile = async (req, res) => {
+  let uploadedStoragePath = null;
 
   try {
-    const ownerId =
-      req.user.id;
+    const ownerId = req.user.id;
 
     const folderId =
-      req.body.folderId ||
-      null;
+      req.body.folderId || null;
 
     if (!req.file) {
-      return res
-        .status(400)
-        .json({
-          error: {
-            code:
-              "FILE_REQUIRED",
-            message:
-              "Please select a file to upload",
-          },
-        });
+      return res.status(400).json({
+        error: {
+          code: "FILE_REQUIRED",
+          message:
+            "Please select a file to upload",
+        },
+      });
     }
 
     const targetValidation =
@@ -277,16 +238,11 @@ const uploadFile = async (
         ownerId,
       });
 
-    if (
-      !targetValidation.valid
-    ) {
+    if (!targetValidation.valid) {
       return res
-        .status(
-          targetValidation.status
-        )
+        .status(targetValidation.status)
         .json({
-          error:
-            targetValidation.error,
+          error: targetValidation.error,
         });
     }
 
@@ -302,11 +258,9 @@ const uploadFile = async (
       storagePath;
 
     await uploadFileToStorage({
-      buffer:
-        req.file.buffer,
+      buffer: req.file.buffer,
       storagePath,
-      mimeType:
-        req.file.mimetype,
+      mimeType: req.file.mimetype,
     });
 
     const {
@@ -315,21 +269,29 @@ const uploadFile = async (
     } = await supabase
       .from("files")
       .insert({
-        name:
-          req.file.originalname,
-        mime_type:
-          req.file.mimetype,
-        size_bytes:
-          req.file.size,
-        storage_path:
-          storagePath,
-        owner_id:
-          ownerId,
-        folder_id:
-          folderId,
+        name: req.file.originalname,
+        mime_type: req.file.mimetype,
+        file_kind: "file",
+        size_bytes: req.file.size,
+        storage_path: storagePath,
+        owner_id: ownerId,
+        folder_id: folderId,
       })
       .select(
-        "id, name, mime_type, size_bytes, storage_path, owner_id, folder_id, is_deleted, is_starred, created_at, updated_at"
+        `
+        id,
+        name,
+        mime_type,
+        file_kind,
+        size_bytes,
+        storage_path,
+        owner_id,
+        folder_id,
+        is_deleted,
+        is_starred,
+        created_at,
+        updated_at
+        `
       )
       .single();
 
@@ -341,57 +303,54 @@ const uploadFile = async (
       throw insertError;
     }
 
-    return res
-      .status(201)
-      .json({
-        message:
-          "File uploaded successfully",
+    return res.status(201).json({
+      message:
+        "File uploaded successfully",
 
-        file: {
-          id: file.id,
-          name: file.name,
+      file: {
+        id: file.id,
+        name: file.name,
 
-          mimeType:
-            file.mime_type,
+        mimeType:
+          file.mime_type,
 
-          sizeBytes:
-            file.size_bytes,
+        fileKind:
+          file.file_kind,
 
-          ownerId:
-            file.owner_id,
+        sizeBytes:
+          file.size_bytes,
 
-          folderId:
-            file.folder_id,
+        ownerId:
+          file.owner_id,
 
-          isDeleted:
-            file.is_deleted,
+        folderId:
+          file.folder_id,
 
-          isStarred:
-            file.is_starred,
+        isDeleted:
+          file.is_deleted,
 
-          createdAt:
-            file.created_at,
+        isStarred:
+          file.is_starred,
 
-          updatedAt:
-            file.updated_at,
-        },
-      });
+        createdAt:
+          file.created_at,
+
+        updatedAt:
+          file.updated_at,
+      },
+    });
   } catch (error) {
     console.error(
       "Upload file error:",
       error
     );
 
-    if (
-      uploadedStoragePath
-    ) {
+    if (uploadedStoragePath) {
       try {
         await deleteFileFromStorage(
           uploadedStoragePath
         );
-      } catch (
-        cleanupError
-      ) {
+      } catch (cleanupError) {
         console.error(
           "Upload cleanup error:",
           cleanupError
@@ -399,17 +358,15 @@ const uploadFile = async (
       }
     }
 
-    return res
-      .status(500)
-      .json({
-        error: {
-          code:
-            "INTERNAL_SERVER_ERROR",
+    return res.status(500).json({
+      error: {
+        code:
+          "INTERNAL_SERVER_ERROR",
 
-          message:
-            "Unable to upload file",
-        },
-      });
+        message:
+          "Unable to upload file",
+      },
+    });
   }
 };
 
@@ -421,12 +378,10 @@ const uploadFolder = async (
   req,
   res
 ) => {
-  const uploadedStoragePaths =
-    [];
+  const uploadedStoragePaths = [];
 
   try {
-    const ownerId =
-      req.user.id;
+    const ownerId = req.user.id;
 
     const parentFolderId =
       req.body.parentFolderId ||
@@ -444,59 +399,41 @@ const uploadFolder = async (
             "[]"
         );
     } catch {
-      return res
-        .status(400)
-        .json({
-          error: {
-            code:
-              "INVALID_RELATIVE_PATHS",
+      return res.status(400).json({
+        error: {
+          code:
+            "INVALID_RELATIVE_PATHS",
 
-            message:
-              "Invalid folder structure information",
-          },
-        });
+          message:
+            "Invalid folder structure information",
+        },
+      });
     }
 
-    // ==================================================
-    // VALIDATION
-    // ==================================================
-
-    if (
-      files.length === 0
-    ) {
-      return res
-        .status(400)
-        .json({
-          error: {
-            code:
-              "FILES_REQUIRED",
-
-            message:
-              "No files were selected",
-          },
-        });
+    if (files.length === 0) {
+      return res.status(400).json({
+        error: {
+          code: "FILES_REQUIRED",
+          message:
+            "No files were selected",
+        },
+      });
     }
 
     if (
       relativePaths.length !==
       files.length
     ) {
-      return res
-        .status(400)
-        .json({
-          error: {
-            code:
-              "PATH_COUNT_MISMATCH",
+      return res.status(400).json({
+        error: {
+          code:
+            "PATH_COUNT_MISMATCH",
 
-            message:
-              "Folder structure does not match uploaded files",
-          },
-        });
+          message:
+            "Folder structure does not match uploaded files",
+        },
+      });
     }
-
-    // ==================================================
-    // CHECK TARGET PARENT
-    // ==================================================
 
     const targetValidation =
       await validateOwnedTargetFolder({
@@ -505,9 +442,7 @@ const uploadFolder = async (
         ownerId,
       });
 
-    if (
-      !targetValidation.valid
-    ) {
+    if (!targetValidation.valid) {
       return res
         .status(
           targetValidation.status
@@ -519,7 +454,7 @@ const uploadFolder = async (
     }
 
     // ==================================================
-    // GET / CREATE FOLDER HELPER
+    // FOLDER HELPER
     // ==================================================
 
     const folderCache =
@@ -564,9 +499,7 @@ const uploadFolder = async (
               false
             );
 
-        if (
-          parentId === null
-        ) {
+        if (parentId === null) {
           query =
             query.is(
               "parent_id",
@@ -589,15 +522,11 @@ const uploadFolder = async (
         } =
           await query.maybeSingle();
 
-        if (
-          existingError
-        ) {
+        if (existingError) {
           throw existingError;
         }
 
-        if (
-          existingFolder
-        ) {
+        if (existingFolder) {
           folderCache.set(
             cacheKey,
             existingFolder.id
@@ -607,9 +536,7 @@ const uploadFolder = async (
         }
 
         const {
-          data:
-            newFolder,
-
+          data: newFolder,
           error:
             createError,
         } = await supabase
@@ -629,9 +556,7 @@ const uploadFolder = async (
           .select("id")
           .single();
 
-        if (
-          createError
-        ) {
+        if (createError) {
           throw createError;
         }
 
@@ -642,10 +567,6 @@ const uploadFolder = async (
 
         return newFolder.id;
       };
-
-    // ==================================================
-    // PROCESS EACH FILE
-    // ==================================================
 
     let uploadedCount = 0;
 
@@ -673,16 +594,12 @@ const uploadFolder = async (
 
       const pathParts =
         relativePath
-          .replace(
-            /\\/g,
-            "/"
-          )
+          .replace(/\\/g, "/")
           .split("/")
           .filter(Boolean);
 
       if (
-        pathParts.length <
-        2
+        pathParts.length < 2
       ) {
         continue;
       }
@@ -696,19 +613,13 @@ const uploadFolder = async (
       let currentParentId =
         parentFolderId;
 
-      // ================================================
-      // CREATE FOLDER TREE
-      // ================================================
-
       for (
         const folderName
         of folderParts
       ) {
         const folderId =
           await getOrCreateFolder({
-            name:
-              folderName,
-
+            name: folderName,
             parentId:
               currentParentId,
           });
@@ -720,10 +631,6 @@ const uploadFolder = async (
         currentParentId =
           folderId;
       }
-
-      // ================================================
-      // STORAGE PATH
-      // ================================================
 
       const storagePath =
         buildStoragePath({
@@ -740,27 +647,15 @@ const uploadFolder = async (
         storagePath
       );
 
-      // ================================================
-      // STORAGE UPLOAD
-      // ================================================
-
       await uploadFileToStorage({
-        buffer:
-          file.buffer,
-
+        buffer: file.buffer,
         storagePath,
-
         mimeType:
           file.mimetype,
       });
 
-      // ================================================
-      // DATABASE
-      // ================================================
-
       const {
-        error:
-          insertError,
+        error: insertError,
       } = await supabase
         .from("files")
         .insert({
@@ -769,6 +664,9 @@ const uploadFolder = async (
 
           mime_type:
             file.mimetype,
+
+          file_kind:
+            "file",
 
           size_bytes:
             file.size,
@@ -783,29 +681,25 @@ const uploadFolder = async (
             currentParentId,
         });
 
-      if (
-        insertError
-      ) {
+      if (insertError) {
         throw insertError;
       }
 
       uploadedCount += 1;
     }
 
-    return res
-      .status(201)
-      .json({
-        message:
-          "Folder uploaded successfully",
+    return res.status(201).json({
+      message:
+        "Folder uploaded successfully",
 
-        uploaded: {
-          files:
-            uploadedCount,
+      uploaded: {
+        files:
+          uploadedCount,
 
-          folders:
-            createdFolderIds.size,
-        },
-      });
+        folders:
+          createdFolderIds.size,
+      },
+    });
   } catch (error) {
     console.error(
       "Folder upload error:",
@@ -820,9 +714,7 @@ const uploadFolder = async (
         await deleteFileFromStorage(
           storagePath
         );
-      } catch (
-        cleanupError
-      ) {
+      } catch (cleanupError) {
         console.error(
           "Folder upload cleanup error:",
           cleanupError
@@ -830,35 +722,27 @@ const uploadFolder = async (
       }
     }
 
-    return res
-      .status(500)
-      .json({
-        error: {
-          code:
-            "INTERNAL_SERVER_ERROR",
+    return res.status(500).json({
+      error: {
+        code:
+          "INTERNAL_SERVER_ERROR",
 
-          message:
-            "Unable to upload folder",
-        },
-      });
+        message:
+          "Unable to upload folder",
+      },
+    });
   }
 };
 
 // ======================================================
 // CREATE CLOUD DOCUMENT
-//
-// Stored as a normal text/plain file.
-//
-// Example:
-// Project Notes.txt
 // ======================================================
 
 const createDocument = async (
   req,
   res
 ) => {
-  let uploadedStoragePath =
-    null;
+  let uploadedStoragePath = null;
 
   try {
     const ownerId =
@@ -869,25 +753,19 @@ const createDocument = async (
       folderId = null,
     } = req.body;
 
-    // ==================================================
-    // VALIDATION
-    // ==================================================
-
     if (
       !name ||
       !name.trim()
     ) {
-      return res
-        .status(400)
-        .json({
-          error: {
-            code:
-              "VALIDATION_ERROR",
+      return res.status(400).json({
+        error: {
+          code:
+            "VALIDATION_ERROR",
 
-            message:
-              "Document name is required",
-          },
-        });
+          message:
+            "Document name is required",
+        },
+      });
     }
 
     const cleanName =
@@ -906,9 +784,7 @@ const createDocument = async (
         ownerId,
       });
 
-    if (
-      !targetValidation.valid
-    ) {
+    if (!targetValidation.valid) {
       return res
         .status(
           targetValidation.status
@@ -920,7 +796,7 @@ const createDocument = async (
     }
 
     // ==================================================
-    // CHECK DUPLICATE FILE NAME
+    // CHECK DUPLICATE
     // ==================================================
 
     let duplicateQuery =
@@ -940,9 +816,7 @@ const createDocument = async (
           false
         );
 
-    if (
-      folderId === null
-    ) {
+    if (folderId === null) {
       duplicateQuery =
         duplicateQuery.is(
           "folder_id",
@@ -965,30 +839,24 @@ const createDocument = async (
     } =
       await duplicateQuery.maybeSingle();
 
-    if (
-      duplicateError
-    ) {
+    if (duplicateError) {
       throw duplicateError;
     }
 
-    if (
-      existingDocument
-    ) {
-      return res
-        .status(409)
-        .json({
-          error: {
-            code:
-              "DOCUMENT_EXISTS",
+    if (existingDocument) {
+      return res.status(409).json({
+        error: {
+          code:
+            "DOCUMENT_EXISTS",
 
-            message:
-              "A document with this name already exists here",
-          },
-        });
+          message:
+            "A document with this name already exists here",
+        },
+      });
     }
 
     // ==================================================
-    // CREATE EMPTY TEXT FILE
+    // EMPTY CONTENT
     // ==================================================
 
     const buffer =
@@ -1001,6 +869,7 @@ const createDocument = async (
       buildStoragePath({
         ownerId,
         folderId,
+
         originalName:
           documentName,
       });
@@ -1011,12 +880,13 @@ const createDocument = async (
     await uploadFileToStorage({
       buffer,
       storagePath,
+
       mimeType:
         "text/plain",
     });
 
     // ==================================================
-    // SAVE DATABASE METADATA
+    // DATABASE
     // ==================================================
 
     const {
@@ -1031,6 +901,9 @@ const createDocument = async (
         mime_type:
           "text/plain",
 
+        file_kind:
+          "document",
+
         size_bytes: 0,
 
         storage_path:
@@ -1043,13 +916,24 @@ const createDocument = async (
           folderId,
       })
       .select(
-        "id, name, mime_type, size_bytes, storage_path, owner_id, folder_id, is_deleted, is_starred, created_at, updated_at"
+        `
+        id,
+        name,
+        mime_type,
+        file_kind,
+        size_bytes,
+        storage_path,
+        owner_id,
+        folder_id,
+        is_deleted,
+        is_starred,
+        created_at,
+        updated_at
+        `
       )
       .single();
 
-    if (
-      insertError
-    ) {
+    if (insertError) {
       await deleteFileFromStorage(
         storagePath
       );
@@ -1057,61 +941,58 @@ const createDocument = async (
       throw insertError;
     }
 
-    return res
-      .status(201)
-      .json({
-        message:
-          "Document created successfully",
+    return res.status(201).json({
+      message:
+        "Document created successfully",
 
-        document: {
-          id: file.id,
+      document: {
+        id: file.id,
 
-          name:
-            file.name,
+        name:
+          file.name,
 
-          mimeType:
-            file.mime_type,
+        mimeType:
+          file.mime_type,
 
-          sizeBytes:
-            file.size_bytes,
+        fileKind:
+          file.file_kind,
 
-          ownerId:
-            file.owner_id,
+        sizeBytes:
+          file.size_bytes,
 
-          folderId:
-            file.folder_id,
+        ownerId:
+          file.owner_id,
 
-          isDeleted:
-            file.is_deleted,
+        folderId:
+          file.folder_id,
 
-          isStarred:
-            file.is_starred,
+        isDeleted:
+          file.is_deleted,
 
-          createdAt:
-            file.created_at,
+        isStarred:
+          file.is_starred,
 
-          updatedAt:
-            file.updated_at,
+        createdAt:
+          file.created_at,
 
-          content: "",
-        },
-      });
+        updatedAt:
+          file.updated_at,
+
+        content: "",
+      },
+    });
   } catch (error) {
     console.error(
       "Create document error:",
       error
     );
 
-    if (
-      uploadedStoragePath
-    ) {
+    if (uploadedStoragePath) {
       try {
         await deleteFileFromStorage(
           uploadedStoragePath
         );
-      } catch (
-        cleanupError
-      ) {
+      } catch (cleanupError) {
         console.error(
           "Create document cleanup error:",
           cleanupError
@@ -1119,23 +1000,20 @@ const createDocument = async (
       }
     }
 
-    return res
-      .status(500)
-      .json({
-        error: {
-          code:
-            "INTERNAL_SERVER_ERROR",
+    return res.status(500).json({
+      error: {
+        code:
+          "INTERNAL_SERVER_ERROR",
 
-          message:
-            "Unable to create document",
-        },
-      });
+        message:
+          "Unable to create document",
+      },
+    });
   }
 };
 
 // ======================================================
 // GET CLOUD DOCUMENT CONTENT
-// OWNER / VIEWER / EDITOR
 // ======================================================
 
 const getDocument = async (
@@ -1155,14 +1033,25 @@ const getDocument = async (
     } = await supabase
       .from("files")
       .select(
-        "id, name, mime_type, size_bytes, storage_path, owner_id, folder_id, is_deleted, is_starred, created_at, updated_at"
+        `
+        id,
+        name,
+        mime_type,
+        file_kind,
+        size_bytes,
+        storage_path,
+        owner_id,
+        folder_id,
+        is_deleted,
+        is_starred,
+        created_at,
+        updated_at
+        `
       )
       .eq("id", fileId)
       .maybeSingle();
 
-    if (
-      fileError
-    ) {
+    if (fileError) {
       throw fileError;
     }
 
@@ -1170,34 +1059,33 @@ const getDocument = async (
       !file ||
       file.is_deleted
     ) {
-      return res
-        .status(404)
-        .json({
-          error: {
-            code:
-              "FILE_NOT_FOUND",
+      return res.status(404).json({
+        error: {
+          code:
+            "FILE_NOT_FOUND",
 
-            message:
-              "Document not found",
-          },
-        });
+          message:
+            "Document not found",
+        },
+      });
     }
 
+    // IMPORTANT:
+    // Only Cloud Drive documents
+    // are editable here.
     if (
-      file.mime_type !==
-      "text/plain"
+      file.file_kind !==
+      "document"
     ) {
-      return res
-        .status(400)
-        .json({
-          error: {
-            code:
-              "NOT_A_DOCUMENT",
+      return res.status(400).json({
+        error: {
+          code:
+            "NOT_A_DOCUMENT",
 
-            message:
-              "This file is not an editable Cloud Drive document",
-          },
-        });
+          message:
+            "This file is not an editable Cloud Drive document",
+        },
+      });
     }
 
     const access =
@@ -1207,22 +1095,16 @@ const getDocument = async (
       });
 
     if (!access.hasAccess) {
-      return res
-        .status(403)
-        .json({
-          error: {
-            code:
-              "FORBIDDEN",
+      return res.status(403).json({
+        error: {
+          code:
+            "FORBIDDEN",
 
-            message:
-              "You do not have access to this document",
-          },
-        });
+          message:
+            "You do not have access to this document",
+        },
+      });
     }
-
-    // ==================================================
-    // DOWNLOAD CONTENT FROM STORAGE
-    // ==================================================
 
     const {
       data: storageFile,
@@ -1234,18 +1116,12 @@ const getDocument = async (
           file.storage_path
         );
 
-    if (
-      downloadError
-    ) {
+    if (downloadError) {
       throw downloadError;
     }
 
     const content =
       await storageFile.text();
-
-    // ==================================================
-    // RECENT ACCESS
-    // ==================================================
 
     const accessedAt =
       new Date().toISOString();
@@ -1261,89 +1137,83 @@ const getDocument = async (
       })
       .eq("id", fileId);
 
-    if (
-      accessUpdateError
-    ) {
+    if (accessUpdateError) {
       console.error(
         "Unable to update last_accessed_at:",
         accessUpdateError
       );
     }
 
-    return res
-      .status(200)
-      .json({
-        document: {
-          id:
-            file.id,
+    return res.status(200).json({
+      document: {
+        id: file.id,
 
-          name:
-            file.name,
+        name:
+          file.name,
 
-          mimeType:
-            file.mime_type,
+        mimeType:
+          file.mime_type,
 
-          sizeBytes:
-            file.size_bytes,
+        fileKind:
+          file.file_kind,
 
-          ownerId:
-            file.owner_id,
+        sizeBytes:
+          file.size_bytes,
 
-          folderId:
-            file.folder_id,
+        ownerId:
+          file.owner_id,
 
-          isStarred:
-            file.is_starred,
+        folderId:
+          file.folder_id,
 
-          createdAt:
-            file.created_at,
+        isStarred:
+          file.is_starred,
 
-          updatedAt:
-            file.updated_at,
+        createdAt:
+          file.created_at,
 
-          lastAccessedAt:
-            accessedAt,
+        updatedAt:
+          file.updated_at,
 
-          permission:
-            access.permission,
+        lastAccessedAt:
+          accessedAt,
 
-          accessType:
-            access.accessType,
+        permission:
+          access.permission,
 
-          canEdit:
-            access.permission ===
-              "owner" ||
-            access.permission ===
-              "editor",
+        accessType:
+          access.accessType,
 
-          content,
-        },
-      });
+        canEdit:
+          access.permission ===
+            "owner" ||
+          access.permission ===
+            "editor",
+
+        content,
+      },
+    });
   } catch (error) {
     console.error(
       "Get document error:",
       error
     );
 
-    return res
-      .status(500)
-      .json({
-        error: {
-          code:
-            "INTERNAL_SERVER_ERROR",
+    return res.status(500).json({
+      error: {
+        code:
+          "INTERNAL_SERVER_ERROR",
 
-          message:
-            "Unable to load document",
-        },
-      });
+        message:
+          "Unable to load document",
+      },
+    });
   }
 };
 
 // ======================================================
-// SAVE CLOUD DOCUMENT CONTENT
+// SAVE CLOUD DOCUMENT
 // OWNER / EDITOR
-//
-// Viewer is read-only.
 // ======================================================
 
 const updateDocumentContent =
@@ -1359,25 +1229,19 @@ const updateDocumentContent =
         content,
       } = req.body;
 
-      // ==================================================
-      // VALIDATE CONTENT
-      // ==================================================
-
       if (
         typeof content !==
         "string"
       ) {
-        return res
-          .status(400)
-          .json({
-            error: {
-              code:
-                "VALIDATION_ERROR",
+        return res.status(400).json({
+          error: {
+            code:
+              "VALIDATION_ERROR",
 
-              message:
-                "Document content must be text",
-            },
-          });
+            message:
+              "Document content must be text",
+          },
+        });
       }
 
       const {
@@ -1386,14 +1250,25 @@ const updateDocumentContent =
       } = await supabase
         .from("files")
         .select(
-          "id, name, mime_type, size_bytes, storage_path, owner_id, folder_id, is_deleted, is_starred, created_at, updated_at"
+          `
+          id,
+          name,
+          mime_type,
+          file_kind,
+          size_bytes,
+          storage_path,
+          owner_id,
+          folder_id,
+          is_deleted,
+          is_starred,
+          created_at,
+          updated_at
+          `
         )
         .eq("id", fileId)
         .maybeSingle();
 
-      if (
-        fileError
-      ) {
+      if (fileError) {
         throw fileError;
       }
 
@@ -1401,39 +1276,31 @@ const updateDocumentContent =
         !file ||
         file.is_deleted
       ) {
-        return res
-          .status(404)
-          .json({
-            error: {
-              code:
-                "FILE_NOT_FOUND",
-
-              message:
-                "Document not found",
-            },
-          });
-      }
-
-      if (
-        file.mime_type !==
-        "text/plain"
-      ) {
-        return res
-          .status(400)
-          .json({
-            error: {
-              code:
-                "NOT_A_DOCUMENT",
+        return res.status(404).json({
+          error: {
+            code:
+              "FILE_NOT_FOUND",
 
             message:
-              "This file is not an editable Cloud Drive document",
+              "Document not found",
           },
         });
       }
 
-      // ==================================================
-      // ACCESS
-      // ==================================================
+      if (
+        file.file_kind !==
+        "document"
+      ) {
+        return res.status(400).json({
+          error: {
+            code:
+              "NOT_A_DOCUMENT",
+
+          message:
+              "This file is not an editable Cloud Drive document",
+          },
+        });
+      }
 
       const access =
         await getFileAccess({
@@ -1442,39 +1309,31 @@ const updateDocumentContent =
         });
 
       if (!access.hasAccess) {
-        return res
-          .status(403)
-          .json({
-            error: {
-              code:
-                "FORBIDDEN",
+        return res.status(403).json({
+          error: {
+            code:
+              "FORBIDDEN",
 
-              message:
-                "You do not have access to this document",
-            },
-          });
+          message:
+              "You do not have access to this document",
+          },
+        });
       }
 
       if (
         access.permission ===
         "viewer"
       ) {
-        return res
-          .status(403)
-          .json({
-            error: {
-              code:
-                "VIEWER_READ_ONLY",
+        return res.status(403).json({
+          error: {
+            code:
+              "VIEWER_READ_ONLY",
 
-              message:
-                "Viewer access is read-only",
-            },
-          });
+          message:
+              "Viewer access is read-only",
+          },
+        });
       }
-
-      // ==================================================
-      // SAVE CONTENT TO STORAGE
-      // ==================================================
 
       const buffer =
         Buffer.from(
@@ -1494,19 +1353,14 @@ const updateDocumentContent =
             {
               contentType:
                 "text/plain",
+
               upsert: true,
             }
           );
 
-      if (
-        storageUpdateError
-      ) {
+      if (storageUpdateError) {
         throw storageUpdateError;
       }
-
-      // ==================================================
-      // UPDATE DATABASE METADATA
-      // ==================================================
 
       const now =
         new Date().toISOString();
@@ -1531,76 +1385,85 @@ const updateDocumentContent =
         })
         .eq("id", fileId)
         .select(
-          "id, name, mime_type, size_bytes, owner_id, folder_id, is_starred, created_at, updated_at, last_accessed_at"
+          `
+          id,
+          name,
+          mime_type,
+          file_kind,
+          size_bytes,
+          owner_id,
+          folder_id,
+          is_starred,
+          created_at,
+          updated_at,
+          last_accessed_at
+          `
         )
         .single();
 
-      if (
-        metadataError
-      ) {
+      if (metadataError) {
         throw metadataError;
       }
 
-      return res
-        .status(200)
-        .json({
-          message:
-            "Document saved successfully",
+      return res.status(200).json({
+        message:
+          "Document saved successfully",
 
-          document: {
-            id:
-              updatedFile.id,
+        document: {
+          id:
+            updatedFile.id,
 
-            name:
-              updatedFile.name,
+          name:
+            updatedFile.name,
 
-            mimeType:
-              updatedFile.mime_type,
+          mimeType:
+            updatedFile.mime_type,
 
-            sizeBytes:
-              updatedFile.size_bytes,
+          fileKind:
+            updatedFile.file_kind,
 
-            ownerId:
-              updatedFile.owner_id,
+          sizeBytes:
+            updatedFile.size_bytes,
 
-            folderId:
-              updatedFile.folder_id,
+          ownerId:
+            updatedFile.owner_id,
 
-            isStarred:
-              updatedFile.is_starred,
+          folderId:
+            updatedFile.folder_id,
 
-            createdAt:
-              updatedFile.created_at,
+          isStarred:
+            updatedFile.is_starred,
 
-            updatedAt:
-              updatedFile.updated_at,
+          createdAt:
+            updatedFile.created_at,
 
-            lastAccessedAt:
-              updatedFile.last_accessed_at,
+          updatedAt:
+            updatedFile.updated_at,
 
-            permission:
-              access.permission,
+          lastAccessedAt:
+            updatedFile.last_accessed_at,
 
-            canEdit: true,
-          },
-        });
+          permission:
+            access.permission,
+
+          canEdit: true,
+        },
+      });
     } catch (error) {
       console.error(
         "Update document content error:",
         error
       );
 
-      return res
-        .status(500)
-        .json({
-          error: {
-            code:
-              "INTERNAL_SERVER_ERROR",
+      return res.status(500).json({
+        error: {
+          code:
+            "INTERNAL_SERVER_ERROR",
 
-            message:
-              "Unable to save document",
-          },
-        });
+          message:
+            "Unable to save document",
+        },
+      });
     }
   };
 
@@ -1625,7 +1488,21 @@ const getFile = async (
     } = await supabase
       .from("files")
       .select(
-        "id, name, mime_type, size_bytes, storage_path, owner_id, folder_id, is_deleted, is_starred, created_at, updated_at, last_accessed_at"
+        `
+        id,
+        name,
+        mime_type,
+        file_kind,
+        size_bytes,
+        storage_path,
+        owner_id,
+        folder_id,
+        is_deleted,
+        is_starred,
+        created_at,
+        updated_at,
+        last_accessed_at
+        `
       )
       .eq("id", fileId)
       .single();
@@ -1635,17 +1512,15 @@ const getFile = async (
       !file ||
       file.is_deleted
     ) {
-      return res
-        .status(404)
-        .json({
-          error: {
-            code:
-              "FILE_NOT_FOUND",
+      return res.status(404).json({
+        error: {
+          code:
+            "FILE_NOT_FOUND",
 
-            message:
-              "File not found",
-          },
-        });
+          message:
+            "File not found",
+        },
+      });
     }
 
     const access =
@@ -1655,17 +1530,14 @@ const getFile = async (
       });
 
     if (!access.hasAccess) {
-      return res
-        .status(403)
-        .json({
-          error: {
-            code:
-              "FORBIDDEN",
+      return res.status(403).json({
+        error: {
+          code: "FORBIDDEN",
 
-            message:
-              "You do not have access to this file",
-          },
-        });
+          message:
+            "You do not have access to this file",
+        },
+      });
     }
 
     const accessedAt =
@@ -1682,9 +1554,7 @@ const getFile = async (
       })
       .eq("id", fileId);
 
-    if (
-      accessUpdateError
-    ) {
+    if (accessUpdateError) {
       console.error(
         "Unable to update last_accessed_at:",
         accessUpdateError
@@ -1697,88 +1567,78 @@ const getFile = async (
         300
       );
 
-    return res
-      .status(200)
-      .json({
-        file: {
-          id:
-            file.id,
+    return res.status(200).json({
+      file: {
+        id:
+          file.id,
 
-          name:
-            file.name,
+        name:
+          file.name,
 
-          mimeType:
-            file.mime_type,
+        mimeType:
+          file.mime_type,
 
-          sizeBytes:
-            file.size_bytes,
+        fileKind:
+          file.file_kind,
 
-          ownerId:
-            file.owner_id,
+        sizeBytes:
+          file.size_bytes,
 
-          folderId:
-            file.folder_id,
+        ownerId:
+          file.owner_id,
 
-          isStarred:
-            file.is_starred,
+        folderId:
+          file.folder_id,
 
-          createdAt:
-            file.created_at,
+        isStarred:
+          file.is_starred,
 
-          updatedAt:
-            file.updated_at,
+        createdAt:
+          file.created_at,
 
-          lastAccessedAt:
-            accessedAt,
+        updatedAt:
+          file.updated_at,
 
-          permission:
-            access.permission,
+        lastAccessedAt:
+          accessedAt,
 
-          accessType:
-            access.accessType,
+        permission:
+          access.permission,
 
-          canEdit:
-            access.permission ===
-              "owner" ||
-            access.permission ===
-              "editor",
-        },
+        accessType:
+          access.accessType,
 
-        signedUrl,
+        canEdit:
+          access.permission ===
+            "owner" ||
+          access.permission ===
+            "editor",
+      },
 
-        expiresIn: 300,
-      });
+      signedUrl,
+
+      expiresIn: 300,
+    });
   } catch (error) {
     console.error(
       "Get file error:",
       error
     );
 
-    return res
-      .status(500)
-      .json({
-        error: {
-          code:
-            "INTERNAL_SERVER_ERROR",
+    return res.status(500).json({
+      error: {
+        code:
+          "INTERNAL_SERVER_ERROR",
 
-          message:
-            "Unable to fetch file",
-        },
-      });
+        message:
+          "Unable to fetch file",
+      },
+    });
   }
 };
 
 // ======================================================
 // UPDATE / RENAME FILE
-//
-// OWNER:
-// rename + move
-//
-// EDITOR:
-// rename only
-//
-// VIEWER:
-// blocked
 // ======================================================
 
 const updateFile = async (
@@ -1803,7 +1663,16 @@ const updateFile = async (
     } = await supabase
       .from("files")
       .select(
-        "id, name, owner_id, folder_id, storage_path, is_deleted, is_starred"
+        `
+        id,
+        name,
+        file_kind,
+        owner_id,
+        folder_id,
+        storage_path,
+        is_deleted,
+        is_starred
+        `
       )
       .eq("id", fileId)
       .single();
@@ -1812,31 +1681,27 @@ const updateFile = async (
       fileError ||
       !file
     ) {
-      return res
-        .status(404)
-        .json({
-          error: {
-            code:
-              "FILE_NOT_FOUND",
+      return res.status(404).json({
+        error: {
+          code:
+            "FILE_NOT_FOUND",
 
-            message:
-              "File not found",
-          },
-        });
+          message:
+            "File not found",
+        },
+      });
     }
 
     if (file.is_deleted) {
-      return res
-        .status(400)
-        .json({
-          error: {
-            code:
-              "FILE_DELETED",
+      return res.status(400).json({
+        error: {
+          code:
+            "FILE_DELETED",
 
-            message:
-              "Deleted files cannot be modified",
-          },
-        });
+          message:
+            "Deleted files cannot be modified",
+        },
+      });
     }
 
     const access =
@@ -1846,91 +1711,76 @@ const updateFile = async (
       });
 
     if (!access.hasAccess) {
-      return res
-        .status(403)
-        .json({
-          error: {
-            code:
-              "FORBIDDEN",
+      return res.status(403).json({
+        error: {
+          code:
+            "FORBIDDEN",
 
-            message:
-              "You do not have permission to modify this file",
-          },
-        });
+          message:
+            "You do not have permission to modify this file",
+        },
+      });
     }
 
     if (
       access.permission ===
       "viewer"
     ) {
-      return res
-        .status(403)
-        .json({
-          error: {
-            code:
-              "VIEWER_READ_ONLY",
+      return res.status(403).json({
+        error: {
+          code:
+            "VIEWER_READ_ONLY",
 
-            message:
-              "Viewer access is read-only",
-          },
-        });
+          message:
+            "Viewer access is read-only",
+        },
+      });
     }
 
     const isOwner =
       access.permission ===
       "owner";
 
-    // Editor cannot move
     if (
       !isOwner &&
       folderId !== undefined
     ) {
-      return res
-        .status(403)
-        .json({
-          error: {
-            code:
-              "EDITOR_RENAME_ONLY",
+      return res.status(403).json({
+        error: {
+          code:
+            "EDITOR_RENAME_ONLY",
 
-            message:
-              "Editors can rename shared files but cannot move them",
-          },
-        });
+          message:
+            "Editors can rename shared files but cannot move them",
+        },
+      });
     }
 
     const updates = {};
 
-    if (
-      name !== undefined
-    ) {
+    if (name !== undefined) {
       if (!name.trim()) {
-        return res
-          .status(400)
-          .json({
-            error: {
-              code:
-                "VALIDATION_ERROR",
+        return res.status(400).json({
+          error: {
+            code:
+              "VALIDATION_ERROR",
 
-              message:
-                "File name cannot be empty",
-            },
-          });
+          message:
+              "File name cannot be empty",
+          },
+        });
       }
 
       updates.name =
         name.trim();
     }
 
-    // Owner-only move
-    if (
-      folderId !== undefined
-    ) {
-      if (
-        folderId !== null
-      ) {
+    if (folderId !== undefined) {
+      if (folderId !== null) {
         const {
           data: folder,
-          error: folderError,
+          error:
+            folderError,
         } = await supabase
           .from("folders")
           .select(
@@ -1986,17 +1836,15 @@ const updateFile = async (
       name === undefined &&
       folderId === undefined
     ) {
-      return res
-        .status(400)
-        .json({
-          error: {
-            code:
-              "VALIDATION_ERROR",
+      return res.status(400).json({
+        error: {
+          code:
+            "VALIDATION_ERROR",
 
-            message:
-              "Provide name or folderId to update",
-          },
-        });
+          message:
+            "Provide name or folderId to update",
+        },
+      });
     }
 
     updates.updated_at =
@@ -2012,7 +1860,19 @@ const updateFile = async (
       .update(updates)
       .eq("id", fileId)
       .select(
-        "id, name, mime_type, size_bytes, owner_id, folder_id, is_deleted, is_starred, created_at, updated_at"
+        `
+        id,
+        name,
+        mime_type,
+        file_kind,
+        size_bytes,
+        owner_id,
+        folder_id,
+        is_deleted,
+        is_starred,
+        created_at,
+        updated_at
+        `
       )
       .single();
 
@@ -2020,67 +1880,65 @@ const updateFile = async (
       throw error;
     }
 
-    return res
-      .status(200)
-      .json({
-        message:
-          "File updated successfully",
+    return res.status(200).json({
+      message:
+        "File updated successfully",
 
-        file: {
-          id:
-            updatedFile.id,
+      file: {
+        id:
+          updatedFile.id,
 
-          name:
-            updatedFile.name,
+        name:
+          updatedFile.name,
 
-          mimeType:
-            updatedFile.mime_type,
+        mimeType:
+          updatedFile.mime_type,
 
-          sizeBytes:
-            updatedFile.size_bytes,
+        fileKind:
+          updatedFile.file_kind,
 
-          ownerId:
-            updatedFile.owner_id,
+        sizeBytes:
+          updatedFile.size_bytes,
 
-          folderId:
-            updatedFile.folder_id,
+        ownerId:
+          updatedFile.owner_id,
 
-          isDeleted:
-            updatedFile.is_deleted,
+        folderId:
+          updatedFile.folder_id,
 
-          isStarred:
-            updatedFile.is_starred,
+        isDeleted:
+          updatedFile.is_deleted,
 
-          createdAt:
-            updatedFile.created_at,
+        isStarred:
+          updatedFile.is_starred,
 
-          updatedAt:
-            updatedFile.updated_at,
-        },
-      });
+        createdAt:
+          updatedFile.created_at,
+
+        updatedAt:
+          updatedFile.updated_at,
+      },
+    });
   } catch (error) {
     console.error(
       "Update file error:",
       error
     );
 
-    return res
-      .status(500)
-      .json({
-        error: {
-          code:
-            "INTERNAL_SERVER_ERROR",
+    return res.status(500).json({
+      error: {
+        code:
+          "INTERNAL_SERVER_ERROR",
 
-          message:
-            "Unable to update file",
-        },
-      });
+        message:
+          "Unable to update file",
+      },
+    });
   }
 };
 
 // ======================================================
 // DELETE FILE
-// OWNER ONLY
 // ======================================================
 
 const deleteFile = async (
@@ -2100,7 +1958,14 @@ const deleteFile = async (
     } = await supabase
       .from("files")
       .select(
-        "id, name, owner_id, is_deleted, is_starred"
+        `
+        id,
+        name,
+        file_kind,
+        owner_id,
+        is_deleted,
+        is_starred
+        `
       )
       .eq("id", fileId)
       .single();
@@ -2109,48 +1974,42 @@ const deleteFile = async (
       fileError ||
       !file
     ) {
-      return res
-        .status(404)
-        .json({
-          error: {
-            code:
-              "FILE_NOT_FOUND",
+      return res.status(404).json({
+        error: {
+          code:
+            "FILE_NOT_FOUND",
 
-            message:
-              "File not found",
-          },
-        });
+          message:
+            "File not found",
+        },
+      });
     }
 
     if (
       file.owner_id !==
       ownerId
     ) {
-      return res
-        .status(403)
-        .json({
-          error: {
-            code:
-              "FORBIDDEN",
+      return res.status(403).json({
+        error: {
+          code:
+            "FORBIDDEN",
 
-            message:
-              "Only the owner can delete this file",
-          },
-        });
+          message:
+            "Only the owner can delete this file",
+        },
+      });
     }
 
     if (file.is_deleted) {
-      return res
-        .status(400)
-        .json({
-          error: {
-            code:
-              "ALREADY_DELETED",
+      return res.status(400).json({
+        error: {
+          code:
+            "ALREADY_DELETED",
 
-            message:
-              "File is already in Trash",
-          },
-        });
+          message:
+            "File is already in Trash",
+        },
+      });
     }
 
     const {
@@ -2168,7 +2027,14 @@ const deleteFile = async (
       })
       .eq("id", fileId)
       .select(
-        "id, name, is_deleted, is_starred, updated_at"
+        `
+        id,
+        name,
+        file_kind,
+        is_deleted,
+        is_starred,
+        updated_at
+        `
       )
       .single();
 
@@ -2176,46 +2042,45 @@ const deleteFile = async (
       throw error;
     }
 
-    return res
-      .status(200)
-      .json({
-        message:
-          "File moved to Trash",
+    return res.status(200).json({
+      message:
+        "File moved to Trash",
 
-        file: {
-          id:
-            deletedFile.id,
+      file: {
+        id:
+          deletedFile.id,
 
-          name:
-            deletedFile.name,
+        name:
+          deletedFile.name,
 
-          isDeleted:
-            deletedFile.is_deleted,
+        fileKind:
+          deletedFile.file_kind,
 
-          isStarred:
-            deletedFile.is_starred,
+        isDeleted:
+          deletedFile.is_deleted,
 
-          updatedAt:
-            deletedFile.updated_at,
-        },
-      });
+        isStarred:
+          deletedFile.is_starred,
+
+        updatedAt:
+          deletedFile.updated_at,
+      },
+    });
   } catch (error) {
     console.error(
       "Delete file error:",
       error
     );
 
-    return res
-      .status(500)
-      .json({
-        error: {
-          code:
-            "INTERNAL_SERVER_ERROR",
+    return res.status(500).json({
+      error: {
+        code:
+          "INTERNAL_SERVER_ERROR",
 
-          message:
-            "Unable to delete file",
-        },
-      });
+        message:
+          "Unable to delete file",
+      },
+    });
   }
 };
 
@@ -2233,11 +2098,23 @@ const getTrash = async (
 
     const {
       data: files,
-      error: filesError,
+      error:
+        filesError,
     } = await supabase
       .from("files")
       .select(
-        "id, name, mime_type, size_bytes, folder_id, is_deleted, is_starred, created_at, updated_at"
+        `
+        id,
+        name,
+        mime_type,
+        file_kind,
+        size_bytes,
+        folder_id,
+        is_deleted,
+        is_starred,
+        created_at,
+        updated_at
+        `
       )
       .eq(
         "owner_id",
@@ -2260,11 +2137,22 @@ const getTrash = async (
 
     const {
       data: folders,
-      error: foldersError,
+      error:
+        foldersError,
     } = await supabase
       .from("folders")
       .select(
-        "id, name, parent_id, owner_id, is_deleted, is_starred, is_project, created_at, updated_at"
+        `
+        id,
+        name,
+        parent_id,
+        owner_id,
+        is_deleted,
+        is_starred,
+        is_project,
+        created_at,
+        updated_at
+        `
       )
       .eq(
         "owner_id",
@@ -2285,98 +2173,94 @@ const getTrash = async (
       throw foldersError;
     }
 
-    return res
-      .status(200)
-      .json({
-        files:
-          (files || []).map(
-            (file) => ({
-              id:
-                file.id,
+    return res.status(200).json({
+      files:
+        (files || []).map(
+          (file) => ({
+            id:
+              file.id,
 
-              name:
-                file.name,
+            name:
+              file.name,
 
-              mimeType:
-                file.mime_type,
+            mimeType:
+              file.mime_type,
 
-              sizeBytes:
-                file.size_bytes,
+            fileKind:
+              file.file_kind,
 
-              folderId:
-                file.folder_id,
+            sizeBytes:
+              file.size_bytes,
 
-              isDeleted:
-                file.is_deleted,
+            folderId:
+              file.folder_id,
 
-              isStarred:
-                file.is_starred,
+            isDeleted:
+              file.is_deleted,
 
-              createdAt:
-                file.created_at,
+            isStarred:
+              file.is_starred,
 
-              updatedAt:
-                file.updated_at,
-            })
-          ),
+            createdAt:
+              file.created_at,
 
-        folders:
-          (
-            folders || []
-          ).map(
-            (folder) => ({
-              id:
-                folder.id,
+            updatedAt:
+              file.updated_at,
+          })
+        ),
 
-              name:
-                folder.name,
+      folders:
+        (folders || []).map(
+          (folder) => ({
+            id:
+              folder.id,
 
-              parentId:
-                folder.parent_id,
+            name:
+              folder.name,
 
-              ownerId:
-                folder.owner_id,
+            parentId:
+              folder.parent_id,
 
-              isDeleted:
-                folder.is_deleted,
+            ownerId:
+              folder.owner_id,
 
-              isStarred:
-                folder.is_starred,
+            isDeleted:
+              folder.is_deleted,
 
-              isProject:
-                folder.is_project,
+            isStarred:
+              folder.is_starred,
 
-              createdAt:
-                folder.created_at,
+            isProject:
+              folder.is_project,
 
-              updatedAt:
-                folder.updated_at,
-            })
-          ),
-      });
+            createdAt:
+              folder.created_at,
+
+            updatedAt:
+              folder.updated_at,
+          })
+        ),
+    });
   } catch (error) {
     console.error(
       "Get trash error:",
       error
     );
 
-    return res
-      .status(500)
-      .json({
-        error: {
-          code:
-            "INTERNAL_SERVER_ERROR",
+    return res.status(500).json({
+      error: {
+        code:
+          "INTERNAL_SERVER_ERROR",
 
-          message:
-            "Unable to fetch Trash",
-        },
-      });
+        message:
+          "Unable to fetch Trash",
+      },
+    });
   }
 };
 
 // ======================================================
 // RESTORE FILE
-// OWNER ONLY
 // ======================================================
 
 const restoreFile = async (
@@ -2396,7 +2280,15 @@ const restoreFile = async (
     } = await supabase
       .from("files")
       .select(
-        "id, name, owner_id, folder_id, is_deleted, is_starred"
+        `
+        id,
+        name,
+        file_kind,
+        owner_id,
+        folder_id,
+        is_deleted,
+        is_starred
+        `
       )
       .eq("id", fileId)
       .single();
@@ -2405,48 +2297,42 @@ const restoreFile = async (
       fileError ||
       !file
     ) {
-      return res
-        .status(404)
-        .json({
-          error: {
-            code:
-              "FILE_NOT_FOUND",
+      return res.status(404).json({
+        error: {
+          code:
+            "FILE_NOT_FOUND",
 
-            message:
-              "File not found",
-          },
-        });
+          message:
+            "File not found",
+        },
+      });
     }
 
     if (
       file.owner_id !==
       ownerId
     ) {
-      return res
-        .status(403)
-        .json({
-          error: {
-            code:
-              "FORBIDDEN",
+      return res.status(403).json({
+        error: {
+          code:
+            "FORBIDDEN",
 
-            message:
-              "Only the owner can restore this file",
-          },
-        });
+          message:
+            "Only the owner can restore this file",
+        },
+      });
     }
 
     if (!file.is_deleted) {
-      return res
-        .status(400)
-        .json({
-          error: {
-            code:
-              "NOT_IN_TRASH",
+      return res.status(400).json({
+        error: {
+          code:
+            "NOT_IN_TRASH",
 
-            message:
-              "File is not in Trash",
-          },
-        });
+          message:
+            "File is not in Trash",
+        },
+      });
     }
 
     let restoreFolderId =
@@ -2483,7 +2369,8 @@ const restoreFile = async (
     } = await supabase
       .from("files")
       .update({
-        is_deleted: false,
+        is_deleted:
+          false,
 
         folder_id:
           restoreFolderId,
@@ -2493,7 +2380,15 @@ const restoreFile = async (
       })
       .eq("id", fileId)
       .select(
-        "id, name, folder_id, is_deleted, is_starred, updated_at"
+        `
+        id,
+        name,
+        file_kind,
+        folder_id,
+        is_deleted,
+        is_starred,
+        updated_at
+        `
       )
       .single();
 
@@ -2501,55 +2396,53 @@ const restoreFile = async (
       throw error;
     }
 
-    return res
-      .status(200)
-      .json({
-        message:
-          "File restored successfully",
+    return res.status(200).json({
+      message:
+        "File restored successfully",
 
-        file: {
-          id:
-            restoredFile.id,
+      file: {
+        id:
+          restoredFile.id,
 
-          name:
-            restoredFile.name,
+        name:
+          restoredFile.name,
 
-          folderId:
-            restoredFile.folder_id,
+        fileKind:
+          restoredFile.file_kind,
 
-          isDeleted:
-            restoredFile.is_deleted,
+        folderId:
+          restoredFile.folder_id,
 
-          isStarred:
-            restoredFile.is_starred,
+        isDeleted:
+          restoredFile.is_deleted,
 
-          updatedAt:
-            restoredFile.updated_at,
-        },
-      });
+        isStarred:
+          restoredFile.is_starred,
+
+        updatedAt:
+          restoredFile.updated_at,
+      },
+    });
   } catch (error) {
     console.error(
       "Restore file error:",
       error
     );
 
-    return res
-      .status(500)
-      .json({
-        error: {
-          code:
-            "INTERNAL_SERVER_ERROR",
+    return res.status(500).json({
+      error: {
+        code:
+          "INTERNAL_SERVER_ERROR",
 
-          message:
-            "Unable to restore file",
-        },
-      });
+        message:
+          "Unable to restore file",
+      },
+    });
   }
 };
 
 // ======================================================
 // PERMANENT DELETE FILE
-// OWNER ONLY
 // ======================================================
 
 const permanentlyDeleteFile =
@@ -2567,7 +2460,14 @@ const permanentlyDeleteFile =
       } = await supabase
         .from("files")
         .select(
-          "id, name, owner_id, storage_path, is_deleted"
+          `
+          id,
+          name,
+          file_kind,
+          owner_id,
+          storage_path,
+          is_deleted
+          `
         )
         .eq("id", fileId)
         .single();
@@ -2576,45 +2476,39 @@ const permanentlyDeleteFile =
         fileError ||
         !file
       ) {
-        return res
-          .status(404)
-          .json({
-            error: {
-              code:
-                "FILE_NOT_FOUND",
+        return res.status(404).json({
+          error: {
+            code:
+              "FILE_NOT_FOUND",
 
-              message:
-                "File not found",
-            },
-          });
+            message:
+              "File not found",
+          },
+        });
       }
 
       if (
         file.owner_id !==
         ownerId
       ) {
-        return res
-          .status(403)
-          .json({
-            error: {
-              code:
-                "FORBIDDEN",
+        return res.status(403).json({
+          error: {
+            code:
+              "FORBIDDEN",
 
-              message:
-                "Only the owner can permanently delete this file",
-            },
-          });
+          message:
+              "Only the owner can permanently delete this file",
+          },
+        });
       }
 
       if (!file.is_deleted) {
-        return res
-          .status(400)
-          .json({
-            error: {
-              code:
-                "NOT_IN_TRASH",
+        return res.status(400).json({
+          error: {
+            code:
+              "NOT_IN_TRASH",
 
-            message:
+          message:
               "Move the file to Trash before permanently deleting it",
           },
         });
@@ -2625,8 +2519,7 @@ const permanentlyDeleteFile =
       );
 
       const {
-        error:
-          deleteError,
+        error: deleteError,
       } = await supabase
         .from("files")
         .delete()
@@ -2636,29 +2529,25 @@ const permanentlyDeleteFile =
         throw deleteError;
       }
 
-      return res
-        .status(200)
-        .json({
-          message:
-            "File permanently deleted",
-        });
+      return res.status(200).json({
+        message:
+          "File permanently deleted",
+      });
     } catch (error) {
       console.error(
         "Permanent delete error:",
         error
       );
 
-      return res
-        .status(500)
-        .json({
-          error: {
-            code:
-              "INTERNAL_SERVER_ERROR",
+      return res.status(500).json({
+        error: {
+          code:
+            "INTERNAL_SERVER_ERROR",
 
-            message:
-              "Unable to permanently delete file",
-          },
-        });
+          message:
+            "Unable to permanently delete file",
+        },
+      });
     }
   };
 
@@ -2670,7 +2559,7 @@ module.exports = {
   uploadFile,
   uploadFolder,
 
-  // Cloud documents
+  // CLOUD DOCUMENTS
   createDocument,
   getDocument,
   updateDocumentContent,
