@@ -1418,12 +1418,254 @@ const permanentlyDeleteFolder =
     }
   };
 
+
+  
+// ======================================================
+// CREATE PROJECT
+// Creates:
+// Project Name
+// ├── Documents
+// ├── Assets
+// ├── Data
+// └── Notes
+// ======================================================
+
+const createProject = async (req, res) => {
+  try {
+    const ownerId = req.user.id;
+
+    const {
+      name,
+      parentId = null,
+    } = req.body;
+
+    // --------------------------------------------------
+    // VALIDATE PROJECT NAME
+    // --------------------------------------------------
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Project name is required",
+        },
+      });
+    }
+
+    const projectName = name.trim();
+
+    // --------------------------------------------------
+    // CHECK PARENT FOLDER
+    // --------------------------------------------------
+
+    if (parentId) {
+      const {
+        data: parentFolder,
+        error: parentError,
+      } = await supabase
+        .from("folders")
+        .select(
+          "id, owner_id, is_deleted"
+        )
+        .eq("id", parentId)
+        .maybeSingle();
+
+      if (parentError) {
+        throw parentError;
+      }
+
+      if (!parentFolder) {
+        return res.status(404).json({
+          error: {
+            code: "PARENT_FOLDER_NOT_FOUND",
+            message: "Parent folder not found",
+          },
+        });
+      }
+
+      if (
+        parentFolder.owner_id !== ownerId ||
+        parentFolder.is_deleted
+      ) {
+        return res.status(403).json({
+          error: {
+            code: "FORBIDDEN",
+            message:
+              "You cannot create a project here",
+          },
+        });
+      }
+    }
+
+    // --------------------------------------------------
+    // CHECK FOR DUPLICATE PROJECT/FOLDER NAME
+    // --------------------------------------------------
+
+    let existingProjectQuery = supabase
+      .from("folders")
+      .select("id")
+      .eq("owner_id", ownerId)
+      .eq("name", projectName)
+      .eq("is_deleted", false);
+
+    if (parentId === null) {
+      existingProjectQuery =
+        existingProjectQuery.is(
+          "parent_id",
+          null
+        );
+    } else {
+      existingProjectQuery =
+        existingProjectQuery.eq(
+          "parent_id",
+          parentId
+        );
+    }
+
+    const {
+      data: existingProject,
+      error: existingError,
+    } =
+      await existingProjectQuery.maybeSingle();
+
+    if (existingError) {
+      throw existingError;
+    }
+
+    if (existingProject) {
+      return res.status(409).json({
+        error: {
+          code: "PROJECT_EXISTS",
+          message:
+            "A folder or project with this name already exists here",
+        },
+      });
+    }
+
+    // --------------------------------------------------
+    // CREATE MAIN PROJECT FOLDER
+    // --------------------------------------------------
+
+    const {
+      data: projectFolder,
+      error: projectError,
+    } = await supabase
+      .from("folders")
+      .insert({
+        name: projectName,
+        owner_id: ownerId,
+        parent_id: parentId,
+      })
+      .select(
+        "id, name, owner_id, parent_id, is_deleted, is_starred, created_at, updated_at"
+      )
+      .single();
+
+    if (projectError) {
+      throw projectError;
+    }
+
+    // --------------------------------------------------
+    // CREATE DEFAULT PROJECT SUBFOLDERS
+    // --------------------------------------------------
+
+    const defaultFolders = [
+      "Documents",
+      "Assets",
+      "Data",
+      "Notes",
+    ];
+
+    const childFolderRows =
+      defaultFolders.map((folderName) => ({
+        name: folderName,
+        owner_id: ownerId,
+        parent_id: projectFolder.id,
+      }));
+
+    const {
+      data: createdFolders,
+      error: childFoldersError,
+    } = await supabase
+      .from("folders")
+      .insert(childFolderRows)
+      .select(
+        "id, name, owner_id, parent_id, is_deleted, is_starred, created_at, updated_at"
+      );
+
+    // --------------------------------------------------
+    // CLEAN UP MAIN PROJECT IF CHILD CREATION FAILS
+    // --------------------------------------------------
+
+    if (childFoldersError) {
+      console.error(
+        "Create project subfolders error:",
+        childFoldersError
+      );
+
+      await supabase
+        .from("folders")
+        .delete()
+        .eq("id", projectFolder.id)
+        .eq("owner_id", ownerId);
+
+      throw childFoldersError;
+    }
+
+    // --------------------------------------------------
+    // SUCCESS RESPONSE
+    // --------------------------------------------------
+
+    return res.status(201).json({
+      message: "Project created successfully",
+
+      project: {
+        id: projectFolder.id,
+        name: projectFolder.name,
+        ownerId: projectFolder.owner_id,
+        parentId: projectFolder.parent_id,
+        isDeleted: projectFolder.is_deleted,
+        isStarred: projectFolder.is_starred,
+        createdAt: projectFolder.created_at,
+        updatedAt: projectFolder.updated_at,
+
+        folders: (createdFolders || []).map(
+          (folder) => ({
+            id: folder.id,
+            name: folder.name,
+            ownerId: folder.owner_id,
+            parentId: folder.parent_id,
+            isDeleted: folder.is_deleted,
+            isStarred: folder.is_starred,
+            createdAt: folder.created_at,
+            updatedAt: folder.updated_at,
+          })
+        ),
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Create project error:",
+      error
+    );
+
+    return res.status(500).json({
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Unable to create project",
+      },
+    });
+  }
+};
+
+
 // ======================================================
 // EXPORTS
 // ======================================================
 
 module.exports = {
   createFolder,
+  createProject,
   getRootFolders,
   getFolderContents,
   updateFolder,
