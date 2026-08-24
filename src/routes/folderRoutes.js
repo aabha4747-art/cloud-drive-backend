@@ -3,6 +3,7 @@ const express = require("express");
 const {
   createFolder,
   createProject,
+  getProjects,
   getRootFolders,
   getFolderContents,
   updateFolder,
@@ -22,49 +23,63 @@ const router = express.Router();
 router.use(authMiddleware);
 
 // ======================================================
-// CREATE
+// CREATE ROUTES
 // ======================================================
 
 // Create normal folder
 router.post("/", createFolder);
 
-// Create project with default subfolders
+// Create project workspace
 router.post("/project", createProject);
 
 // ======================================================
-// GET
+// SPECIAL GET ROUTES
+//
+// VERY IMPORTANT:
+// These routes MUST stay ABOVE "/:id".
+//
+// Otherwise Express will interpret:
+// /projects -> id = "projects"
+// /root     -> id = "root"
 // ======================================================
 
-// Get My Drive root contents
+// Get all projects
+router.get("/projects", getProjects);
+
+// Get My Drive root
 router.get("/root", getRootFolders);
 
 // ======================================================
-// UPDATE
+// UPDATE FOLDER
 // ======================================================
 
-// Rename / move folder
 router.patch("/:id", updateFolder);
 
 // ======================================================
-// TRASH
+// MOVE TO TRASH
 // ======================================================
 
-// Move folder to Trash
 router.delete("/:id", deleteFolder);
 
-// Restore folder from Trash
+// ======================================================
+// RESTORE
+// ======================================================
+
 router.post("/:id/restore", restoreFolder);
 
-// Permanently delete folder and its contents
+// ======================================================
+// PERMANENT DELETE
+// ======================================================
+
 router.delete(
   "/:id/permanent",
   permanentlyDeleteFolder
 );
 
 // ======================================================
-// GET FOLDER CONTENTS
-// IMPORTANT:
-// Keep this after specific routes such as /root and /project
+// GET ONE FOLDER + CONTENTS
+//
+// THIS MUST ALWAYS STAY LAST.
 // ======================================================
 
 router.get("/:id", getFolderContents);
