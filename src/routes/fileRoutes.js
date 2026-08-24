@@ -10,6 +10,12 @@ const {
   getDocument,
   updateDocumentContent,
 
+  // Cloud spreadsheets
+  createSpreadsheet,
+  getSpreadsheet,
+  updateSpreadsheetContent,
+
+  // Normal files
   getFile,
   updateFile,
   deleteFile,
@@ -68,33 +74,56 @@ router.post(
 // CLOUD DOCUMENTS
 //
 // IMPORTANT:
-// Keep these routes ABOVE "/:id"
-// so Express does not treat "documents"
-// as a file id.
+// These must stay ABOVE "/:id".
 // ======================================================
 
-// Create a new editable text document
+// Create document
 router.post(
   "/documents",
   createDocument
 );
 
-// Get editable document + content
+// Get document
 router.get(
   "/documents/:id",
   getDocument
 );
 
-// Save document content
+// Save document
 router.patch(
   "/documents/:id/content",
   updateDocumentContent
 );
 
 // ======================================================
+// CLOUD SPREADSHEETS
+//
+// IMPORTANT:
+// These must also stay ABOVE "/:id".
+// ======================================================
+
+// Create spreadsheet
+router.post(
+  "/spreadsheets",
+  createSpreadsheet
+);
+
+// Get spreadsheet
+router.get(
+  "/spreadsheets/:id",
+  getSpreadsheet
+);
+
+// Save spreadsheet
+router.patch(
+  "/spreadsheets/:id/content",
+  updateSpreadsheetContent
+);
+
+// ======================================================
 // TRASH
 //
-// Keep this above "/:id" as well.
+// Keep ABOVE "/:id".
 // ======================================================
 
 router.get(
@@ -142,8 +171,7 @@ router.delete(
 // GET NORMAL FILE
 //
 // IMPORTANT:
-// Keep this LAST because "/:id"
-// matches almost anything.
+// KEEP THIS LAST.
 // ======================================================
 
 router.get(

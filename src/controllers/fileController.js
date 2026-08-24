@@ -1467,6 +1467,866 @@ const updateDocumentContent =
     }
   };
 
+
+// ======================================================
+// CREATE CLOUD SPREADSHEET
+// ======================================================
+
+const createSpreadsheet = async (req, res) => {
+  let uploadedStoragePath = null;
+
+  try {
+    const ownerId = req.user.id;
+
+    const {
+      name,
+      folderId = null,
+    } = req.body;
+
+    // ==================================================
+    // VALIDATE NAME
+    // ==================================================
+
+    if (
+      !name ||
+      !name.trim()
+    ) {
+      return res.status(400).json({
+        error: {
+          code: "VALIDATION_ERROR",
+          message:
+            "Spreadsheet name is required",
+        },
+      });
+    }
+
+    const cleanName =
+      name.trim();
+
+    const spreadsheetName =
+      cleanName
+        .toLowerCase()
+        .endsWith(".cloudsheet")
+        ? cleanName
+        : `${cleanName}.cloudsheet`;
+
+    // ==================================================
+    // VALIDATE TARGET FOLDER
+    // ==================================================
+
+    const targetValidation =
+      await validateOwnedTargetFolder({
+        folderId,
+        ownerId,
+      });
+
+    if (!targetValidation.valid) {
+      return res
+        .status(
+          targetValidation.status
+        )
+        .json({
+          error:
+            targetValidation.error,
+        });
+    }
+
+    // ==================================================
+    // CHECK DUPLICATE
+    // ==================================================
+
+    let duplicateQuery =
+      supabase
+        .from("files")
+        .select("id")
+        .eq(
+          "owner_id",
+          ownerId
+        )
+        .eq(
+          "name",
+          spreadsheetName
+        )
+        .eq(
+          "is_deleted",
+          false
+        );
+
+    if (folderId === null) {
+      duplicateQuery =
+        duplicateQuery.is(
+          "folder_id",
+          null
+        );
+    } else {
+      duplicateQuery =
+        duplicateQuery.eq(
+          "folder_id",
+          folderId
+        );
+    }
+
+    const {
+      data: existingSpreadsheet,
+      error: duplicateError,
+    } =
+      await duplicateQuery.maybeSingle();
+
+    if (duplicateError) {
+      throw duplicateError;
+    }
+
+    if (existingSpreadsheet) {
+      return res.status(409).json({
+        error: {
+          code:
+            "SPREADSHEET_EXISTS",
+
+          message:
+            "A spreadsheet with this name already exists here",
+        },
+      });
+    }
+
+    // ==================================================
+    // INITIAL SPREADSHEET CONTENT
+    // ==================================================
+
+    const initialSpreadsheet = {
+      version: 1,
+
+      sheets: [
+        {
+          id: "sheet-1",
+          name: "Sheet1",
+
+          rows: 50,
+          columns: 26,
+
+          cells: {},
+        },
+      ],
+
+      activeSheetId:
+        "sheet-1",
+    };
+
+    const content =
+      JSON.stringify(
+        initialSpreadsheet
+      );
+
+    const buffer =
+      Buffer.from(
+        content,
+        "utf8"
+      );
+
+    // ==================================================
+    // STORAGE PATH
+    // ==================================================
+
+    const storagePath =
+      buildStoragePath({
+        ownerId,
+        folderId,
+
+        originalName:
+          spreadsheetName,
+      });
+
+    uploadedStoragePath =
+      storagePath;
+
+    // ==================================================
+    // UPLOAD INITIAL FILE
+    // ==================================================
+
+    await uploadFileToStorage({
+      buffer,
+      storagePath,
+
+      mimeType:
+        "application/json",
+    });
+
+    // ==================================================
+    // DATABASE
+    // ==================================================
+
+    const {
+      data: file,
+      error: insertError,
+    } = await supabase
+      .from("files")
+      .insert({
+        name:
+          spreadsheetName,
+
+        mime_type:
+          "application/json",
+
+        file_kind:
+          "spreadsheet",
+
+        size_bytes:
+          buffer.length,
+
+        storage_path:
+          storagePath,
+
+        owner_id:
+          ownerId,
+
+        folder_id:
+          folderId,
+      })
+      .select(
+        `
+        id,
+        name,
+        mime_type,
+        file_kind,
+        size_bytes,
+        storage_path,
+        owner_id,
+        folder_id,
+        is_deleted,
+        is_starred,
+        created_at,
+        updated_at
+        `
+      )
+      .single();
+
+    if (insertError) {
+      await deleteFileFromStorage(
+        storagePath
+      );
+
+      throw insertError;
+    }
+
+    // ==================================================
+    // RESPONSE
+    // ==================================================
+
+    return res.status(201).json({
+      message:
+        "Spreadsheet created successfully",
+
+      spreadsheet: {
+        id: file.id,
+
+        name:
+          file.name,
+
+        mimeType:
+          file.mime_type,
+
+        fileKind:
+          file.file_kind,
+
+        sizeBytes:
+          file.size_bytes,
+
+        ownerId:
+          file.owner_id,
+
+        folderId:
+          file.folder_id,
+
+        isDeleted:
+          file.is_deleted,
+
+        isStarred:
+          file.is_starred,
+
+        createdAt:
+          file.created_at,
+
+        updatedAt:
+          file.updated_at,
+
+        data:
+          initialSpreadsheet,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Create spreadsheet error:",
+      error
+    );
+
+    if (uploadedStoragePath) {
+      try {
+        await deleteFileFromStorage(
+          uploadedStoragePath
+        );
+      } catch (cleanupError) {
+        console.error(
+          "Create spreadsheet cleanup error:",
+          cleanupError
+        );
+      }
+    }
+
+    return res.status(500).json({
+      error: {
+        code:
+          "INTERNAL_SERVER_ERROR",
+
+        message:
+          "Unable to create spreadsheet",
+      },
+    });
+  }
+};
+
+// ======================================================
+// GET CLOUD SPREADSHEET
+// ======================================================
+
+const getSpreadsheet = async (
+  req,
+  res
+) => {
+  try {
+    const userId =
+      req.user.id;
+
+    const fileId =
+      req.params.id;
+
+    // ==================================================
+    // GET DATABASE FILE
+    // ==================================================
+
+    const {
+      data: file,
+      error: fileError,
+    } = await supabase
+      .from("files")
+      .select(
+        `
+        id,
+        name,
+        mime_type,
+        file_kind,
+        size_bytes,
+        storage_path,
+        owner_id,
+        folder_id,
+        is_deleted,
+        is_starred,
+        created_at,
+        updated_at
+        `
+      )
+      .eq(
+        "id",
+        fileId
+      )
+      .maybeSingle();
+
+    if (fileError) {
+      throw fileError;
+    }
+
+    if (
+      !file ||
+      file.is_deleted
+    ) {
+      return res.status(404).json({
+        error: {
+          code:
+            "FILE_NOT_FOUND",
+
+          message:
+            "Spreadsheet not found",
+        },
+      });
+    }
+
+    // ==================================================
+    // VERIFY TYPE
+    // ==================================================
+
+    if (
+      file.file_kind !==
+      "spreadsheet"
+    ) {
+      return res.status(400).json({
+        error: {
+          code:
+            "NOT_A_SPREADSHEET",
+
+          message:
+            "This file is not an editable Cloud Drive spreadsheet",
+        },
+      });
+    }
+
+    // ==================================================
+    // CHECK ACCESS
+    // ==================================================
+
+    const access =
+      await getFileAccess({
+        file,
+        userId,
+      });
+
+    if (!access.hasAccess) {
+      return res.status(403).json({
+        error: {
+          code:
+            "FORBIDDEN",
+
+          message:
+            "You do not have access to this spreadsheet",
+        },
+      });
+    }
+
+    // ==================================================
+    // DOWNLOAD CONTENT
+    // ==================================================
+
+    const {
+      data: storageFile,
+      error: downloadError,
+    } =
+      await supabase.storage
+        .from(bucketName)
+        .download(
+          file.storage_path
+        );
+
+    if (downloadError) {
+      throw downloadError;
+    }
+
+    const rawContent =
+      await storageFile.text();
+
+    let spreadsheetData;
+
+    try {
+      spreadsheetData =
+        JSON.parse(
+          rawContent
+        );
+    } catch {
+      return res.status(500).json({
+        error: {
+          code:
+            "INVALID_SPREADSHEET_DATA",
+
+          message:
+            "Spreadsheet data is invalid",
+        },
+      });
+    }
+
+    // ==================================================
+    // UPDATE LAST ACCESSED
+    // ==================================================
+
+    const accessedAt =
+      new Date().toISOString();
+
+    const {
+      error: accessUpdateError,
+    } = await supabase
+      .from("files")
+      .update({
+        last_accessed_at:
+          accessedAt,
+      })
+      .eq(
+        "id",
+        fileId
+      );
+
+    if (accessUpdateError) {
+      console.error(
+        "Unable to update last_accessed_at:",
+        accessUpdateError
+      );
+    }
+
+    // ==================================================
+    // RESPONSE
+    // ==================================================
+
+    return res.status(200).json({
+      spreadsheet: {
+        id: file.id,
+
+        name:
+          file.name,
+
+        mimeType:
+          file.mime_type,
+
+        fileKind:
+          file.file_kind,
+
+        sizeBytes:
+          file.size_bytes,
+
+        ownerId:
+          file.owner_id,
+
+        folderId:
+          file.folder_id,
+
+        isStarred:
+          file.is_starred,
+
+        createdAt:
+          file.created_at,
+
+        updatedAt:
+          file.updated_at,
+
+        lastAccessedAt:
+          accessedAt,
+
+        permission:
+          access.permission,
+
+        accessType:
+          access.accessType,
+
+        canEdit:
+          access.permission ===
+            "owner" ||
+          access.permission ===
+            "editor",
+
+        data:
+          spreadsheetData,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Get spreadsheet error:",
+      error
+    );
+
+    return res.status(500).json({
+      error: {
+        code:
+          "INTERNAL_SERVER_ERROR",
+
+        message:
+          "Unable to load spreadsheet",
+      },
+    });
+  }
+};
+
+// ======================================================
+// SAVE CLOUD SPREADSHEET
+// OWNER / EDITOR
+// ======================================================
+
+const updateSpreadsheetContent =
+  async (req, res) => {
+    try {
+      const userId =
+        req.user.id;
+
+      const fileId =
+        req.params.id;
+
+      const {
+        data,
+      } = req.body;
+
+      // ==================================================
+      // VALIDATE DATA
+      // ==================================================
+
+      if (
+        !data ||
+        typeof data !==
+          "object" ||
+        Array.isArray(data)
+      ) {
+        return res.status(400).json({
+          error: {
+            code:
+              "VALIDATION_ERROR",
+
+            message:
+              "Spreadsheet data must be an object",
+          },
+        });
+      }
+
+      // ==================================================
+      // GET FILE
+      // ==================================================
+
+      const {
+        data: file,
+        error: fileError,
+      } = await supabase
+        .from("files")
+        .select(
+          `
+          id,
+          name,
+          mime_type,
+          file_kind,
+          size_bytes,
+          storage_path,
+          owner_id,
+          folder_id,
+          is_deleted,
+          is_starred,
+          created_at,
+          updated_at
+          `
+        )
+        .eq(
+          "id",
+          fileId
+        )
+        .maybeSingle();
+
+      if (fileError) {
+        throw fileError;
+      }
+
+      if (
+        !file ||
+        file.is_deleted
+      ) {
+        return res.status(404).json({
+          error: {
+            code:
+              "FILE_NOT_FOUND",
+
+            message:
+              "Spreadsheet not found",
+          },
+        });
+      }
+
+      // ==================================================
+      // VERIFY TYPE
+      // ==================================================
+
+      if (
+        file.file_kind !==
+        "spreadsheet"
+      ) {
+        return res.status(400).json({
+          error: {
+            code:
+              "NOT_A_SPREADSHEET",
+
+            message:
+              "This file is not an editable Cloud Drive spreadsheet",
+          },
+        });
+      }
+
+      // ==================================================
+      // CHECK ACCESS
+      // ==================================================
+
+      const access =
+        await getFileAccess({
+          file,
+          userId,
+        });
+
+      if (!access.hasAccess) {
+        return res.status(403).json({
+          error: {
+            code:
+              "FORBIDDEN",
+
+            message:
+              "You do not have access to this spreadsheet",
+          },
+        });
+      }
+
+      if (
+        access.permission ===
+        "viewer"
+      ) {
+        return res.status(403).json({
+          error: {
+            code:
+              "VIEWER_READ_ONLY",
+
+            message:
+              "Viewer access is read-only",
+          },
+        });
+      }
+
+      // ==================================================
+      // CONVERT TO JSON
+      // ==================================================
+
+      const content =
+        JSON.stringify(data);
+
+      const buffer =
+        Buffer.from(
+          content,
+          "utf8"
+        );
+
+      // ==================================================
+      // UPDATE STORAGE
+      // ==================================================
+
+      const {
+        error:
+          storageUpdateError,
+      } =
+        await supabase.storage
+          .from(bucketName)
+          .update(
+            file.storage_path,
+            buffer,
+            {
+              contentType:
+                "application/json",
+
+              upsert: true,
+            }
+          );
+
+      if (storageUpdateError) {
+        throw storageUpdateError;
+      }
+
+      // ==================================================
+      // UPDATE DATABASE
+      // ==================================================
+
+      const now =
+        new Date().toISOString();
+
+      const {
+        data: updatedFile,
+        error: metadataError,
+      } = await supabase
+        .from("files")
+        .update({
+          size_bytes:
+            buffer.length,
+
+          updated_at:
+            now,
+
+          last_accessed_at:
+            now,
+        })
+        .eq(
+          "id",
+          fileId
+        )
+        .select(
+          `
+          id,
+          name,
+          mime_type,
+          file_kind,
+          size_bytes,
+          owner_id,
+          folder_id,
+          is_starred,
+          created_at,
+          updated_at,
+          last_accessed_at
+          `
+        )
+        .single();
+
+      if (metadataError) {
+        throw metadataError;
+      }
+
+      // ==================================================
+      // RESPONSE
+      // ==================================================
+
+      return res.status(200).json({
+        message:
+          "Spreadsheet saved successfully",
+
+        spreadsheet: {
+          id:
+            updatedFile.id,
+
+          name:
+            updatedFile.name,
+
+          mimeType:
+            updatedFile.mime_type,
+
+          fileKind:
+            updatedFile.file_kind,
+
+          sizeBytes:
+            updatedFile.size_bytes,
+
+          ownerId:
+            updatedFile.owner_id,
+
+          folderId:
+            updatedFile.folder_id,
+
+          isStarred:
+            updatedFile.is_starred,
+
+          createdAt:
+            updatedFile.created_at,
+
+          updatedAt:
+            updatedFile.updated_at,
+
+          lastAccessedAt:
+            updatedFile.last_accessed_at,
+
+          permission:
+            access.permission,
+
+          canEdit: true,
+
+          data,
+        },
+      });
+    } catch (error) {
+      console.error(
+        "Update spreadsheet content error:",
+        error
+      );
+
+      return res.status(500).json({
+        error: {
+          code:
+            "INTERNAL_SERVER_ERROR",
+
+          message:
+            "Unable to save spreadsheet",
+        },
+      });
+    }
+  };
+
+
 // ======================================================
 // GET FILE
 // ======================================================
@@ -2564,6 +3424,12 @@ module.exports = {
   getDocument,
   updateDocumentContent,
 
+  // CLOUD SPREADSHEETS
+  createSpreadsheet,
+  getSpreadsheet,
+  updateSpreadsheetContent,
+
+  // NORMAL FILE OPERATIONS
   getFile,
   updateFile,
   deleteFile,
