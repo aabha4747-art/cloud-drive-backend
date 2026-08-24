@@ -1,8 +1,7 @@
 const multer = require("multer");
 const path = require("path");
 
-const storage =
-  multer.memoryStorage();
+const storage = multer.memoryStorage();
 
 const allowedMimeTypes = [
   // Images
@@ -10,6 +9,7 @@ const allowedMimeTypes = [
   "image/png",
   "image/webp",
   "image/gif",
+  "image/bmp",
 
   // Documents
   "application/pdf",
@@ -41,12 +41,15 @@ const allowedMimeTypes = [
 ];
 
 const allowedExtensions = [
+  // Images
   ".jpg",
   ".jpeg",
   ".png",
   ".webp",
   ".gif",
+  ".bmp",
 
+  // Documents
   ".pdf",
   ".txt",
   ".csv",
@@ -57,44 +60,33 @@ const allowedExtensions = [
   ".ppt",
   ".pptx",
 
+  // Audio
   ".mp3",
   ".wav",
   ".ogg",
 
+  // Video
   ".mp4",
   ".webm",
   ".mov",
 
+  // Archives
   ".zip",
 ];
 
-const fileFilter = (
-  req,
-  file,
-  cb
-) => {
+const fileFilter = (req, file, cb) => {
   const extension = path
     .extname(file.originalname)
     .toLowerCase();
 
   const mimeAllowed =
-    allowedMimeTypes.includes(
-      file.mimetype
-    );
+    allowedMimeTypes.includes(file.mimetype);
 
   const extensionAllowed =
-    allowedExtensions.includes(
-      extension
-    );
+    allowedExtensions.includes(extension);
 
-  if (
-    mimeAllowed &&
-    extensionAllowed
-  ) {
-    return cb(
-      null,
-      true
-    );
+  if (mimeAllowed && extensionAllowed) {
+    return cb(null, true);
   }
 
   return cb(
@@ -109,12 +101,10 @@ const upload = multer({
   storage,
 
   limits: {
-    // Maximum size PER FILE
-    fileSize:
-      20 * 1024 * 1024,
+    // Max size per file = 20 MB
+    fileSize: 20 * 1024 * 1024,
 
-    // Maximum number of files
-    // accepted in one folder upload
+    // Max files in one folder upload
     files: 100,
   },
 
