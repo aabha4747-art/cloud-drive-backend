@@ -4,6 +4,12 @@ const express =
 const {
   uploadFile,
   uploadFolder,
+
+  // Cloud documents
+  createDocument,
+  getDocument,
+  updateDocumentContent,
+
   getFile,
   updateFile,
   deleteFile,
@@ -26,6 +32,10 @@ const upload =
 
 const router =
   express.Router();
+
+// ======================================================
+// AUTHENTICATION
+// ======================================================
 
 router.use(
   authMiddleware
@@ -55,7 +65,36 @@ router.post(
 );
 
 // ======================================================
+// CLOUD DOCUMENTS
+//
+// IMPORTANT:
+// Keep these routes ABOVE "/:id"
+// so Express does not treat "documents"
+// as a file id.
+// ======================================================
+
+// Create a new editable text document
+router.post(
+  "/documents",
+  createDocument
+);
+
+// Get editable document + content
+router.get(
+  "/documents/:id",
+  getDocument
+);
+
+// Save document content
+router.patch(
+  "/documents/:id/content",
+  updateDocumentContent
+);
+
+// ======================================================
 // TRASH
+//
+// Keep this above "/:id" as well.
 // ======================================================
 
 router.get(
@@ -64,7 +103,7 @@ router.get(
 );
 
 // ======================================================
-// UPDATE
+// UPDATE / RENAME / MOVE FILE
 // ======================================================
 
 router.patch(
@@ -73,7 +112,7 @@ router.patch(
 );
 
 // ======================================================
-// DELETE
+// MOVE FILE TO TRASH
 // ======================================================
 
 router.delete(
@@ -82,7 +121,7 @@ router.delete(
 );
 
 // ======================================================
-// RESTORE
+// RESTORE FILE
 // ======================================================
 
 router.post(
@@ -100,7 +139,11 @@ router.delete(
 );
 
 // ======================================================
-// GET FILE
+// GET NORMAL FILE
+//
+// IMPORTANT:
+// Keep this LAST because "/:id"
+// matches almost anything.
 // ======================================================
 
 router.get(
