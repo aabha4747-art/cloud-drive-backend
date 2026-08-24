@@ -1,7 +1,8 @@
 const multer = require("multer");
 const path = require("path");
 
-const storage = multer.memoryStorage();
+const storage =
+  multer.memoryStorage();
 
 const allowedMimeTypes = [
   // Images
@@ -67,16 +68,33 @@ const allowedExtensions = [
   ".zip",
 ];
 
-const fileFilter = (req, file, cb) => {
+const fileFilter = (
+  req,
+  file,
+  cb
+) => {
   const extension = path
     .extname(file.originalname)
     .toLowerCase();
 
-  const mimeAllowed = allowedMimeTypes.includes(file.mimetype);
-  const extensionAllowed = allowedExtensions.includes(extension);
+  const mimeAllowed =
+    allowedMimeTypes.includes(
+      file.mimetype
+    );
 
-  if (mimeAllowed && extensionAllowed) {
-    return cb(null, true);
+  const extensionAllowed =
+    allowedExtensions.includes(
+      extension
+    );
+
+  if (
+    mimeAllowed &&
+    extensionAllowed
+  ) {
+    return cb(
+      null,
+      true
+    );
   }
 
   return cb(
@@ -89,9 +107,17 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({
   storage,
+
   limits: {
-    fileSize: 20 * 1024 * 1024,
+    // Maximum size PER FILE
+    fileSize:
+      20 * 1024 * 1024,
+
+    // Maximum number of files
+    // accepted in one folder upload
+    files: 100,
   },
+
   fileFilter,
 });
 

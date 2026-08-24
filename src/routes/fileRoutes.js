@@ -1,21 +1,39 @@
-const express = require("express");
+const express =
+  require("express");
 
 const {
   uploadFile,
+  uploadFolder,
   getFile,
   updateFile,
   deleteFile,
   getTrash,
   restoreFile,
   permanentlyDeleteFile,
-} = require("../controllers/fileController");
+} = require(
+  "../controllers/fileController"
+);
 
-const authMiddleware = require("../middleware/authMiddleware");
-const upload = require("../middleware/uploadMiddleware");
+const authMiddleware =
+  require(
+    "../middleware/authMiddleware"
+  );
 
-const router = express.Router();
+const upload =
+  require(
+    "../middleware/uploadMiddleware"
+  );
 
-router.use(authMiddleware);
+const router =
+  express.Router();
+
+router.use(
+  authMiddleware
+);
+
+// ======================================================
+// SINGLE FILE UPLOAD
+// ======================================================
 
 router.post(
   "/upload",
@@ -23,16 +41,72 @@ router.post(
   uploadFile
 );
 
-router.get("/trash", getTrash);
+// ======================================================
+// FOLDER UPLOAD
+// ======================================================
 
-router.patch("/:id", updateFile);
+router.post(
+  "/upload-folder",
+  upload.array(
+    "files",
+    100
+  ),
+  uploadFolder
+);
 
-router.delete("/:id", deleteFile);
+// ======================================================
+// TRASH
+// ======================================================
 
-router.post("/:id/restore", restoreFile);
+router.get(
+  "/trash",
+  getTrash
+);
 
-router.delete("/:id/permanent", permanentlyDeleteFile);
+// ======================================================
+// UPDATE
+// ======================================================
 
-router.get("/:id", getFile);
+router.patch(
+  "/:id",
+  updateFile
+);
 
-module.exports = router;
+// ======================================================
+// DELETE
+// ======================================================
+
+router.delete(
+  "/:id",
+  deleteFile
+);
+
+// ======================================================
+// RESTORE
+// ======================================================
+
+router.post(
+  "/:id/restore",
+  restoreFile
+);
+
+// ======================================================
+// PERMANENT DELETE
+// ======================================================
+
+router.delete(
+  "/:id/permanent",
+  permanentlyDeleteFile
+);
+
+// ======================================================
+// GET FILE
+// ======================================================
+
+router.get(
+  "/:id",
+  getFile
+);
+
+module.exports =
+  router;

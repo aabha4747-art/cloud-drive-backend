@@ -278,6 +278,485 @@ const uploadFile = async (
 };
 
 // ======================================================
+// UPLOAD COMPLETE FOLDER
+// ======================================================
+
+const uploadFolder = async (
+  req,
+  res
+) => {
+  const uploadedStoragePaths =
+    [];
+
+  try {
+    const ownerId =
+      req.user.id;
+
+    const parentFolderId =
+      req.body.parentFolderId ||
+      null;
+
+    const files =
+      req.files || [];
+
+    // relativePaths arrives as JSON string
+    let relativePaths = [];
+
+    try {
+      relativePaths =
+        JSON.parse(
+          req.body.relativePaths ||
+            "[]"
+        );
+    } catch {
+      return res
+        .status(400)
+        .json({
+          error: {
+            code:
+              "INVALID_RELATIVE_PATHS",
+
+            message:
+              "Invalid folder structure information",
+          },
+        });
+    }
+
+    // ==================================================
+    // VALIDATION
+    // ==================================================
+
+    if (
+      files.length === 0
+    ) {
+      return res
+        .status(400)
+        .json({
+          error: {
+            code:
+              "FILES_REQUIRED",
+
+            message:
+              "No files were selected",
+          },
+        });
+    }
+
+    if (
+      relativePaths.length !==
+      files.length
+    ) {
+      return res
+        .status(400)
+        .json({
+          error: {
+            code:
+              "PATH_COUNT_MISMATCH",
+
+            message:
+              "Folder structure does not match uploaded files",
+          },
+        });
+    }
+
+    // ==================================================
+    // CHECK TARGET PARENT
+    // ==================================================
+
+    if (parentFolderId) {
+      const {
+        data:
+          parentFolder,
+
+        error:
+          parentError,
+      } = await supabase
+        .from("folders")
+        .select(
+          "id, owner_id, is_deleted"
+        )
+        .eq(
+          "id",
+          parentFolderId
+        )
+        .single();
+
+      if (
+        parentError ||
+        !parentFolder
+      ) {
+        return res
+          .status(404)
+          .json({
+            error: {
+              code:
+                "PARENT_FOLDER_NOT_FOUND",
+
+              message:
+                "Target folder not found",
+            },
+          });
+      }
+
+      if (
+        parentFolder.owner_id !==
+          ownerId ||
+        parentFolder.is_deleted
+      ) {
+        return res
+          .status(403)
+          .json({
+            error: {
+              code:
+                "FORBIDDEN",
+
+              message:
+                "You cannot upload a folder here",
+            },
+          });
+      }
+    }
+
+    // ==================================================
+    // GET / CREATE FOLDER HELPER
+    // ==================================================
+
+    const folderCache =
+      new Map();
+
+    const getOrCreateFolder =
+      async ({
+        name,
+        parentId,
+      }) => {
+        const cacheKey =
+          `${
+            parentId || "root"
+          }::${name}`;
+
+        if (
+          folderCache.has(
+            cacheKey
+          )
+        ) {
+          return folderCache.get(
+            cacheKey
+          );
+        }
+
+        let query =
+          supabase
+            .from("folders")
+            .select(
+              "id, name, parent_id"
+            )
+            .eq(
+              "owner_id",
+              ownerId
+            )
+            .eq(
+              "name",
+              name
+            )
+            .eq(
+              "is_deleted",
+              false
+            );
+
+        if (
+          parentId === null
+        ) {
+          query =
+            query.is(
+              "parent_id",
+              null
+            );
+        } else {
+          query =
+            query.eq(
+              "parent_id",
+              parentId
+            );
+        }
+
+        const {
+          data:
+            existingFolder,
+
+          error:
+            existingError,
+        } =
+          await query.maybeSingle();
+
+        if (
+          existingError
+        ) {
+          throw existingError;
+        }
+
+        if (
+          existingFolder
+        ) {
+          folderCache.set(
+            cacheKey,
+            existingFolder.id
+          );
+
+          return existingFolder.id;
+        }
+
+        const {
+          data:
+            newFolder,
+
+          error:
+            createError,
+        } = await supabase
+          .from("folders")
+          .insert({
+            name,
+            owner_id:
+              ownerId,
+            parent_id:
+              parentId,
+          })
+          .select(
+            "id"
+          )
+          .single();
+
+        if (
+          createError
+        ) {
+          throw createError;
+        }
+
+        folderCache.set(
+          cacheKey,
+          newFolder.id
+        );
+
+        return newFolder.id;
+      };
+
+    // ==================================================
+    // PROCESS EACH FILE
+    // ==================================================
+
+    let uploadedCount = 0;
+
+    const createdFolderIds =
+      new Set();
+
+    for (
+      let index = 0;
+      index < files.length;
+      index += 1
+    ) {
+      const file =
+        files[index];
+
+      const relativePath =
+        relativePaths[index];
+
+      if (
+        !relativePath ||
+        typeof relativePath !==
+          "string"
+      ) {
+        continue;
+      }
+
+      // Example:
+      //
+      // College/
+      //   Semester7/
+      //     notes.pdf
+      //
+      // webkitRelativePath:
+      // College/Semester7/notes.pdf
+
+      const pathParts =
+        relativePath
+          .replace(
+            /\\/g,
+            "/"
+          )
+          .split("/")
+          .filter(Boolean);
+
+      if (
+        pathParts.length <
+        2
+      ) {
+        continue;
+      }
+
+      // Remove actual filename
+      const folderParts =
+        pathParts.slice(
+          0,
+          -1
+        );
+
+      let currentParentId =
+        parentFolderId;
+
+      // ================================================
+      // CREATE FOLDER TREE
+      // ================================================
+
+      for (
+        const folderName
+        of folderParts
+      ) {
+        const folderId =
+          await getOrCreateFolder({
+            name:
+              folderName,
+
+            parentId:
+              currentParentId,
+          });
+
+        createdFolderIds.add(
+          folderId
+        );
+
+        currentParentId =
+          folderId;
+      }
+
+      // ================================================
+      // STORAGE PATH
+      // ================================================
+
+      const storagePath =
+        buildStoragePath({
+          ownerId,
+
+          folderId:
+            currentParentId,
+
+          originalName:
+            file.originalname,
+        });
+
+      uploadedStoragePaths.push(
+        storagePath
+      );
+
+      // ================================================
+      // UPLOAD TO SUPABASE STORAGE
+      // ================================================
+
+      await uploadFileToStorage({
+        buffer:
+          file.buffer,
+
+        storagePath,
+
+        mimeType:
+          file.mimetype,
+      });
+
+      // ================================================
+      // SAVE FILE METADATA
+      // ================================================
+
+      const {
+        error:
+          insertError,
+      } = await supabase
+        .from("files")
+        .insert({
+          name:
+            file.originalname,
+
+          mime_type:
+            file.mimetype,
+
+          size_bytes:
+            file.size,
+
+          storage_path:
+            storagePath,
+
+          owner_id:
+            ownerId,
+
+          folder_id:
+            currentParentId,
+        });
+
+      if (
+        insertError
+      ) {
+        throw insertError;
+      }
+
+      uploadedCount += 1;
+    }
+
+    // ==================================================
+    // RESPONSE
+    // ==================================================
+
+    return res
+      .status(201)
+      .json({
+        message:
+          "Folder uploaded successfully",
+
+        uploaded: {
+          files:
+            uploadedCount,
+
+          folders:
+            createdFolderIds.size,
+        },
+      });
+  } catch (error) {
+    console.error(
+      "Folder upload error:",
+      error
+    );
+
+    // Remove uploaded storage
+    // objects if process failed
+    for (
+      const storagePath
+      of uploadedStoragePaths
+    ) {
+      try {
+        await deleteFileFromStorage(
+          storagePath
+        );
+      } catch (
+        cleanupError
+      ) {
+        console.error(
+          "Folder upload cleanup error:",
+          cleanupError
+        );
+      }
+    }
+
+    return res
+      .status(500)
+      .json({
+        error: {
+          code:
+            "INTERNAL_SERVER_ERROR",
+
+          message:
+            "Unable to upload folder",
+        },
+      });
+  }
+};
+
+// ======================================================
 // GET FILE
 // ======================================================
 
@@ -1283,6 +1762,7 @@ const permanentlyDeleteFile =
 
 module.exports = {
   uploadFile,
+  uploadFolder,
   getFile,
   updateFile,
   deleteFile,
