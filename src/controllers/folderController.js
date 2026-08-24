@@ -36,7 +36,10 @@ const getFolderAccess = async (
     };
   }
 
-  // Owner
+  // ==================================================
+  // OWNER
+  // ==================================================
+
   if (folder.owner_id === userId) {
     return {
       folder,
@@ -46,7 +49,10 @@ const getFolderAccess = async (
     };
   }
 
-  // Shared folder / inherited permission
+  // ==================================================
+  // SHARED / INHERITED ACCESS
+  // ==================================================
+
   let currentFolder = folder;
 
   const visited = new Set();
@@ -137,7 +143,6 @@ const getFolderAccess = async (
 
 // ======================================================
 // CREATE NORMAL FOLDER
-// OWNER ONLY
 // ======================================================
 
 const createFolder = async (
@@ -167,9 +172,9 @@ const createFolder = async (
         });
     }
 
-    // --------------------------------------------------
+    // ==================================================
     // VALIDATE PARENT
-    // --------------------------------------------------
+    // ==================================================
 
     if (parentId) {
       const {
@@ -223,9 +228,9 @@ const createFolder = async (
       }
     }
 
-    // --------------------------------------------------
+    // ==================================================
     // DUPLICATE CHECK
-    // --------------------------------------------------
+    // ==================================================
 
     let existingFolderQuery =
       supabase
@@ -282,9 +287,9 @@ const createFolder = async (
         });
     }
 
-    // --------------------------------------------------
+    // ==================================================
     // CREATE
-    // --------------------------------------------------
+    // ==================================================
 
     const {
       data: folder,
@@ -293,9 +298,15 @@ const createFolder = async (
       .from("folders")
       .insert({
         name: name.trim(),
-        owner_id: ownerId,
-        parent_id: parentId,
-        is_project: false,
+
+        owner_id:
+          ownerId,
+
+        parent_id:
+          parentId,
+
+        is_project:
+          false,
       })
       .select(
         "id, name, owner_id, parent_id, is_deleted, is_starred, is_project, created_at, updated_at"
@@ -313,8 +324,11 @@ const createFolder = async (
           "Folder created successfully",
 
         folder: {
-          id: folder.id,
-          name: folder.name,
+          id:
+            folder.id,
+
+          name:
+            folder.name,
 
           ownerId:
             folder.owner_id,
@@ -360,12 +374,6 @@ const createFolder = async (
 
 // ======================================================
 // CREATE PROJECT
-//
-// Project
-// ├── Documents
-// ├── Assets
-// ├── Data
-// └── Notes
 // ======================================================
 
 const createProject = async (
@@ -398,9 +406,9 @@ const createProject = async (
     const projectName =
       name.trim();
 
-    // --------------------------------------------------
+    // ==================================================
     // VALIDATE PARENT
-    // --------------------------------------------------
+    // ==================================================
 
     if (parentId) {
       const {
@@ -454,9 +462,9 @@ const createProject = async (
       }
     }
 
-    // --------------------------------------------------
+    // ==================================================
     // DUPLICATE CHECK
-    // --------------------------------------------------
+    // ==================================================
 
     let existingProjectQuery =
       supabase
@@ -513,9 +521,9 @@ const createProject = async (
         });
     }
 
-    // --------------------------------------------------
-    // CREATE MAIN PROJECT
-    // --------------------------------------------------
+    // ==================================================
+    // CREATE PROJECT ROOT
+    // ==================================================
 
     const {
       data: projectFolder,
@@ -523,7 +531,8 @@ const createProject = async (
     } = await supabase
       .from("folders")
       .insert({
-        name: projectName,
+        name:
+          projectName,
 
         owner_id:
           ownerId,
@@ -531,7 +540,8 @@ const createProject = async (
         parent_id:
           parentId,
 
-        is_project: true,
+        is_project:
+          true,
       })
       .select(
         "id, name, owner_id, parent_id, is_deleted, is_starred, is_project, created_at, updated_at"
@@ -542,9 +552,9 @@ const createProject = async (
       throw projectError;
     }
 
-    // --------------------------------------------------
-    // CREATE PROJECT CHILD FOLDERS
-    // --------------------------------------------------
+    // ==================================================
+    // PROJECT DEFAULT FOLDERS
+    // ==================================================
 
     const defaultFolders = [
       "Documents",
@@ -583,9 +593,7 @@ const createProject = async (
         "id, name, owner_id, parent_id, is_deleted, is_starred, is_project, created_at, updated_at"
       );
 
-    if (
-      childFoldersError
-    ) {
+    if (childFoldersError) {
       console.error(
         "Create project subfolders error:",
         childFoldersError
@@ -807,7 +815,7 @@ const getProjects = async (
 
 // ======================================================
 // GET ROOT CONTENTS
-// PROJECTS ARE HIDDEN FROM MY DRIVE
+// PROJECTS HIDDEN FROM MY DRIVE
 // ======================================================
 
 const getRootFolders = async (
@@ -817,6 +825,10 @@ const getRootFolders = async (
   try {
     const ownerId =
       req.user.id;
+
+    // ==================================================
+    // ROOT FOLDERS
+    // ==================================================
 
     const {
       data: folders,
@@ -853,13 +865,31 @@ const getRootFolders = async (
       throw foldersError;
     }
 
+    // ==================================================
+    // ROOT FILES
+    //
+    // IMPORTANT:
+    // file_kind is now returned.
+    // ==================================================
+
     const {
       data: files,
       error: filesError,
     } = await supabase
       .from("files")
       .select(
-        "id, name, mime_type, size_bytes, owner_id, folder_id, is_starred, created_at, updated_at"
+        `
+        id,
+        name,
+        mime_type,
+        file_kind,
+        size_bytes,
+        owner_id,
+        folder_id,
+        is_starred,
+        created_at,
+        updated_at
+        `
       )
       .eq(
         "owner_id",
@@ -931,6 +961,10 @@ const getRootFolders = async (
 
               mimeType:
                 file.mime_type,
+
+              // IMPORTANT
+              fileKind:
+                file.file_kind,
 
               sizeBytes:
                 file.size_bytes,
@@ -1028,6 +1062,10 @@ const getFolderContents =
       const folderOwnerId =
         folder.owner_id;
 
+      // ==================================================
+      // CHILD FOLDERS
+      // ==================================================
+
       const {
         data: childFolders,
         error: childError,
@@ -1059,13 +1097,31 @@ const getFolderContents =
         throw childError;
       }
 
+      // ==================================================
+      // FILES INSIDE FOLDER
+      //
+      // IMPORTANT:
+      // file_kind is now returned.
+      // ==================================================
+
       const {
         data: files,
         error: filesError,
       } = await supabase
         .from("files")
         .select(
-          "id, name, mime_type, size_bytes, owner_id, folder_id, is_starred, created_at, updated_at"
+          `
+          id,
+          name,
+          mime_type,
+          file_kind,
+          size_bytes,
+          owner_id,
+          folder_id,
+          is_starred,
+          created_at,
+          updated_at
+          `
         )
         .eq(
           "owner_id",
@@ -1185,6 +1241,10 @@ const getFolderContents =
                 mimeType:
                   file.mime_type,
 
+                // IMPORTANT
+                fileKind:
+                  file.file_kind,
+
                 sizeBytes:
                   file.size_bytes,
 
@@ -1227,15 +1287,6 @@ const getFolderContents =
 
 // ======================================================
 // UPDATE / RENAME FOLDER
-//
-// OWNER:
-// rename + move
-//
-// EDITOR:
-// rename only
-//
-// VIEWER:
-// blocked
 // ======================================================
 
 const updateFolder = async (
@@ -1329,7 +1380,7 @@ const updateFolder = async (
         });
     }
 
-    // Editor cannot move folder
+    // Editor cannot move folders
     if (
       !isOwner &&
       parentId !== undefined
@@ -1349,9 +1400,9 @@ const updateFolder = async (
 
     const updates = {};
 
-    // --------------------------------------------------
+    // ==================================================
     // RENAME
-    // --------------------------------------------------
+    // ==================================================
 
     if (name !== undefined) {
       if (!name.trim()) {
@@ -1372,9 +1423,9 @@ const updateFolder = async (
         name.trim();
     }
 
-    // --------------------------------------------------
+    // ==================================================
     // MOVE - OWNER ONLY
-    // --------------------------------------------------
+    // ==================================================
 
     if (
       parentId !== undefined
@@ -1547,7 +1598,6 @@ const updateFolder = async (
 
 // ======================================================
 // SOFT DELETE FOLDER
-// OWNER ONLY
 // ======================================================
 
 const deleteFolder = async (
@@ -1696,7 +1746,6 @@ const deleteFolder = async (
 
 // ======================================================
 // RESTORE FOLDER
-// OWNER ONLY
 // ======================================================
 
 const restoreFolder =
@@ -1803,7 +1852,8 @@ const restoreFolder =
       } = await supabase
         .from("folders")
         .update({
-          is_deleted: false,
+          is_deleted:
+            false,
 
           parent_id:
             restoreParentId,
@@ -1878,7 +1928,6 @@ const restoreFolder =
 
 // ======================================================
 // PERMANENT DELETE FOLDER
-// OWNER ONLY
 // ======================================================
 
 const permanentlyDeleteFolder =
@@ -1953,9 +2002,9 @@ const permanentlyDeleteFolder =
           });
       }
 
-      // --------------------------------------------------
+      // ==================================================
       // GET ALL OWNER FOLDERS
-      // --------------------------------------------------
+      // ==================================================
 
       const {
         data: allFolders,
@@ -1975,9 +2024,9 @@ const permanentlyDeleteFolder =
         throw allFoldersError;
       }
 
-      // --------------------------------------------------
-      // FIND ALL DESCENDANTS
-      // --------------------------------------------------
+      // ==================================================
+      // FIND DESCENDANTS
+      // ==================================================
 
       const descendantFolderIds =
         [];
@@ -2017,9 +2066,9 @@ const permanentlyDeleteFolder =
         ...descendantFolderIds,
       ];
 
-      // --------------------------------------------------
-      // GET ALL FILES
-      // --------------------------------------------------
+      // ==================================================
+      // GET ALL FILES IN TREE
+      // ==================================================
 
       const {
         data: folderFiles,
@@ -2027,7 +2076,14 @@ const permanentlyDeleteFolder =
       } = await supabase
         .from("files")
         .select(
-          "id, name, storage_path, folder_id, owner_id"
+          `
+          id,
+          name,
+          file_kind,
+          storage_path,
+          folder_id,
+          owner_id
+          `
         )
         .eq(
           "owner_id",
@@ -2045,9 +2101,9 @@ const permanentlyDeleteFolder =
       const files =
         folderFiles || [];
 
-      // --------------------------------------------------
+      // ==================================================
       // DELETE STORAGE OBJECTS
-      // --------------------------------------------------
+      // ==================================================
 
       for (
         const file
@@ -2064,9 +2120,9 @@ const permanentlyDeleteFolder =
         );
       }
 
-      // --------------------------------------------------
-      // DELETE FILE DATABASE ROWS
-      // --------------------------------------------------
+      // ==================================================
+      // DELETE FILE ROWS
+      // ==================================================
 
       if (
         files.length > 0
@@ -2099,9 +2155,9 @@ const permanentlyDeleteFolder =
         }
       }
 
-      // --------------------------------------------------
-      // CALCULATE DEPTH
-      // --------------------------------------------------
+      // ==================================================
+      // DEPTH CALCULATION
+      // ==================================================
 
       const getFolderDepth = (
         id
@@ -2154,9 +2210,9 @@ const permanentlyDeleteFolder =
             getFolderDepth(a)
         );
 
-      // --------------------------------------------------
+      // ==================================================
       // DELETE CHILD FOLDERS
-      // --------------------------------------------------
+      // ==================================================
 
       for (
         const childFolderId
@@ -2184,9 +2240,9 @@ const permanentlyDeleteFolder =
         }
       }
 
-      // --------------------------------------------------
+      // ==================================================
       // DELETE ROOT FOLDER / PROJECT
-      // --------------------------------------------------
+      // ==================================================
 
       const {
         error:
