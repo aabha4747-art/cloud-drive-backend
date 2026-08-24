@@ -5,22 +5,14 @@ const {
   uploadFile,
   uploadFolder,
 
-  // Cloud documents
   createDocument,
   getDocument,
   updateDocumentContent,
 
-  // Cloud spreadsheets
   createSpreadsheet,
   getSpreadsheet,
   updateSpreadsheetContent,
 
-  // Cloud presentations
-  createPresentation,
-  getPresentation,
-  updatePresentationContent,
-
-  // Normal files
   getFile,
   updateFile,
   deleteFile,
@@ -29,6 +21,14 @@ const {
   permanentlyDeleteFile,
 } = require(
   "../controllers/fileController"
+);
+
+const {
+  createPresentation,
+  getPresentation,
+  updatePresentationContent,
+} = require(
+  "../controllers/presentationController"
 );
 
 const authMiddleware =

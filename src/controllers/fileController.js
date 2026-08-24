@@ -5094,18 +5094,17 @@ module.exports = {
   uploadFile,
   uploadFolder,
 
+  // CLOUD DOCUMENTS
   createDocument,
   getDocument,
   updateDocumentContent,
 
+  // CLOUD SPREADSHEETS
   createSpreadsheet,
   getSpreadsheet,
   updateSpreadsheetContent,
 
-  createPresentation,
-  getPresentation,
-  updatePresentationContent,
-
+  // NORMAL FILE OPERATIONS
   getFile,
   updateFile,
   deleteFile,
