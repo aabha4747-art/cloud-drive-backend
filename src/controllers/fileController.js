@@ -1484,6 +1484,16 @@ const createSpreadsheet = async (req, res) => {
       templateId = null,
     } = req.body;
 
+
+    console.log(
+  "CREATE PRESENTATION REQUEST:",
+  {
+    name,
+    folderId,
+    templateId,
+  }
+);
+
     // ==================================================
     // VALIDATE NAME
     // ==================================================
