@@ -1481,6 +1481,7 @@ const createSpreadsheet = async (req, res) => {
     const {
       name,
       folderId = null,
+      templateId = null,
     } = req.body;
 
     // ==================================================
@@ -1567,8 +1568,11 @@ const createSpreadsheet = async (req, res) => {
     }
 
     const {
-      data: existingSpreadsheet,
-      error: duplicateError,
+      data:
+        existingSpreadsheet,
+
+      error:
+        duplicateError,
     } =
       await duplicateQuery.maybeSingle();
 
@@ -1576,7 +1580,9 @@ const createSpreadsheet = async (req, res) => {
       throw duplicateError;
     }
 
-    if (existingSpreadsheet) {
+    if (
+      existingSpreadsheet
+    ) {
       return res.status(409).json({
         error: {
           code:
@@ -1589,21 +1595,1556 @@ const createSpreadsheet = async (req, res) => {
     }
 
     // ==================================================
+    // TEMPLATE DATA
+    // ==================================================
+
+    const getTemplateCells =
+  (selectedTemplateId) => {
+    // ==================================================
+    // SHARED STYLES
+    // ==================================================
+
+    const titleStyle = {
+      backgroundColor:
+        "#ECFDF5",
+      color:
+        "#047857",
+      fontWeight:
+        "700",
+      fontSize:
+        "18px",
+      textAlign:
+        "left",
+    };
+
+    const greenHeaderStyle = {
+      backgroundColor:
+        "#D1FAE5",
+      color:
+        "#065F46",
+      fontWeight:
+        "700",
+      textAlign:
+        "center",
+    };
+
+    const blueHeaderStyle = {
+      backgroundColor:
+        "#DBEAFE",
+      color:
+        "#1D4ED8",
+      fontWeight:
+        "700",
+      textAlign:
+        "center",
+    };
+
+    const violetHeaderStyle = {
+      backgroundColor:
+        "#EDE9FE",
+      color:
+        "#6D28D9",
+      fontWeight:
+        "700",
+      textAlign:
+        "center",
+    };
+
+    const amberHeaderStyle = {
+      backgroundColor:
+        "#FEF3C7",
+      color:
+        "#B45309",
+      fontWeight:
+        "700",
+      textAlign:
+        "center",
+    };
+
+    const centerStyle = {
+      textAlign:
+        "center",
+    };
+
+    // ==================================================
+    // PROJECT TRACKER
+    // ==================================================
+
+    if (
+      selectedTemplateId ===
+      "project-tracker"
+    ) {
+      return {
+        A1: {
+          value:
+            "Project Tracker",
+
+          style: {
+            ...titleStyle,
+          },
+        },
+
+        A3: {
+          value: "Task",
+
+          style: {
+            ...greenHeaderStyle,
+          },
+        },
+
+        B3: {
+          value: "Owner",
+
+          style: {
+            ...greenHeaderStyle,
+          },
+        },
+
+        C3: {
+          value:
+            "Priority",
+
+          style: {
+            ...greenHeaderStyle,
+          },
+        },
+
+        D3: {
+          value: "Status",
+
+          style: {
+            ...greenHeaderStyle,
+          },
+        },
+
+        E3: {
+          value:
+            "Due Date",
+
+          style: {
+            ...greenHeaderStyle,
+          },
+        },
+
+        F3: {
+          value:
+            "Progress",
+
+          style: {
+            ...greenHeaderStyle,
+          },
+        },
+
+        A4: {
+          value:
+            "Research requirements",
+        },
+
+        B4: {
+          value: "Aabha",
+
+          style: {
+            ...centerStyle,
+          },
+        },
+
+        C4: {
+          value: "High",
+
+          style: {
+            backgroundColor:
+              "#FEE2E2",
+            color:
+              "#B91C1C",
+            fontWeight:
+              "600",
+            textAlign:
+              "center",
+          },
+        },
+
+        D4: {
+          value: "Done",
+
+          style: {
+            backgroundColor:
+              "#DCFCE7",
+            color:
+              "#15803D",
+            fontWeight:
+              "600",
+            textAlign:
+              "center",
+          },
+        },
+
+        E4: {
+          value:
+            "12 Aug 2026",
+
+          style: {
+            ...centerStyle,
+          },
+        },
+
+        F4: {
+          value: "100%",
+
+          style: {
+            backgroundColor:
+              "#DCFCE7",
+            color:
+              "#15803D",
+            fontWeight:
+              "700",
+            textAlign:
+              "center",
+          },
+        },
+
+        A5: {
+          value:
+            "Create design",
+        },
+
+        B5: {
+          value: "Priya",
+
+          style: {
+            ...centerStyle,
+          },
+        },
+
+        C5: {
+          value: "High",
+
+          style: {
+            backgroundColor:
+              "#FEE2E2",
+            color:
+              "#B91C1C",
+            fontWeight:
+              "600",
+            textAlign:
+              "center",
+          },
+        },
+
+        D5: {
+          value:
+            "In Progress",
+
+          style: {
+            backgroundColor:
+              "#FEF3C7",
+            color:
+              "#B45309",
+            fontWeight:
+              "600",
+            textAlign:
+              "center",
+          },
+        },
+
+        E5: {
+          value:
+            "15 Aug 2026",
+
+          style: {
+            ...centerStyle,
+          },
+        },
+
+        F5: {
+          value: "60%",
+
+          style: {
+            backgroundColor:
+              "#FEF3C7",
+            color:
+              "#B45309",
+            fontWeight:
+              "700",
+            textAlign:
+              "center",
+          },
+        },
+
+        A6: {
+          value:
+            "Testing",
+        },
+
+        B6: {
+          value: "Team",
+
+          style: {
+            ...centerStyle,
+          },
+        },
+
+        C6: {
+          value: "Medium",
+
+          style: {
+            backgroundColor:
+              "#FEF3C7",
+            color:
+              "#B45309",
+            fontWeight:
+              "600",
+            textAlign:
+              "center",
+          },
+        },
+
+        D6: {
+          value: "To Do",
+
+          style: {
+            backgroundColor:
+              "#F1F5F9",
+            color:
+              "#475569",
+            fontWeight:
+              "600",
+            textAlign:
+              "center",
+          },
+        },
+
+        E6: {
+          value:
+            "18 Aug 2026",
+
+          style: {
+            ...centerStyle,
+          },
+        },
+
+        F6: {
+          value: "0%",
+
+          style: {
+            backgroundColor:
+              "#F1F5F9",
+            color:
+              "#64748B",
+            fontWeight:
+              "700",
+            textAlign:
+              "center",
+          },
+        },
+
+        A7: {
+          value:
+            "Launch",
+        },
+
+        B7: {
+          value: "Team",
+
+          style: {
+            ...centerStyle,
+          },
+        },
+
+        C7: {
+          value: "High",
+
+          style: {
+            backgroundColor:
+              "#FEE2E2",
+            color:
+              "#B91C1C",
+            fontWeight:
+              "600",
+            textAlign:
+              "center",
+          },
+        },
+
+        D7: {
+          value: "To Do",
+
+          style: {
+            backgroundColor:
+              "#F1F5F9",
+            color:
+              "#475569",
+            fontWeight:
+              "600",
+            textAlign:
+              "center",
+          },
+        },
+
+        E7: {
+          value:
+            "22 Aug 2026",
+
+          style: {
+            ...centerStyle,
+          },
+        },
+
+        F7: {
+          value: "0%",
+
+          style: {
+            backgroundColor:
+              "#F1F5F9",
+            color:
+              "#64748B",
+            fontWeight:
+              "700",
+            textAlign:
+              "center",
+          },
+        },
+
+        A9: {
+          value:
+            "Overall Progress",
+
+          style: {
+            backgroundColor:
+              "#ECFDF5",
+            color:
+              "#047857",
+            fontWeight:
+              "700",
+          },
+        },
+
+        B9: {
+          value: "40%",
+
+          style: {
+            backgroundColor:
+              "#D1FAE5",
+            color:
+              "#047857",
+            fontWeight:
+              "700",
+            textAlign:
+              "center",
+          },
+        },
+      };
+    }
+
+    // ==================================================
+    // MONTHLY BUDGET
+    // ==================================================
+
+    if (
+      selectedTemplateId ===
+      "monthly-budget"
+    ) {
+      return {
+        A1: {
+          value:
+            "Monthly Budget",
+
+          style: {
+            backgroundColor:
+              "#F0FDF4",
+            color:
+              "#166534",
+            fontWeight:
+              "700",
+            fontSize:
+              "18px",
+          },
+        },
+
+        A3: {
+          value: "Income",
+
+          style: {
+            ...greenHeaderStyle,
+          },
+        },
+
+        B3: {
+          value: "Amount",
+
+          style: {
+            ...greenHeaderStyle,
+          },
+        },
+
+        A4: {
+          value: "Salary",
+        },
+
+        B4: {
+          value: "₹85,000",
+
+          style: {
+            backgroundColor:
+              "#DCFCE7",
+            color:
+              "#15803D",
+            fontWeight:
+              "700",
+            textAlign:
+              "right",
+          },
+        },
+
+        A5: {
+          value:
+            "Other Income",
+        },
+
+        B5: {
+          value: "₹5,000",
+
+          style: {
+            backgroundColor:
+              "#DCFCE7",
+            color:
+              "#15803D",
+            fontWeight:
+              "600",
+            textAlign:
+              "right",
+          },
+        },
+
+        D3: {
+          value:
+            "Expenses",
+
+          style: {
+            backgroundColor:
+              "#FEE2E2",
+            color:
+              "#B91C1C",
+            fontWeight:
+              "700",
+            textAlign:
+              "center",
+          },
+        },
+
+        E3: {
+          value: "Amount",
+
+          style: {
+            backgroundColor:
+              "#FEE2E2",
+            color:
+              "#B91C1C",
+            fontWeight:
+              "700",
+            textAlign:
+              "center",
+          },
+        },
+
+        D4: {
+          value: "Rent",
+        },
+
+        E4: {
+          value: "₹18,000",
+
+          style: {
+            textAlign:
+              "right",
+          },
+        },
+
+        D5: {
+          value: "Food",
+        },
+
+        E5: {
+          value: "₹9,500",
+
+          style: {
+            textAlign:
+              "right",
+          },
+        },
+
+        D6: {
+          value: "Travel",
+        },
+
+        E6: {
+          value: "₹6,200",
+
+          style: {
+            textAlign:
+              "right",
+          },
+        },
+
+        D7: {
+          value:
+            "Utilities",
+        },
+
+        E7: {
+          value: "₹4,400",
+
+          style: {
+            textAlign:
+              "right",
+          },
+        },
+
+        D8: {
+          value: "Other",
+        },
+
+        E8: {
+          value: "₹4,800",
+
+          style: {
+            textAlign:
+              "right",
+          },
+        },
+
+        A10: {
+          value:
+            "Total Income",
+
+          style: {
+            backgroundColor:
+              "#DCFCE7",
+            color:
+              "#166534",
+            fontWeight:
+              "700",
+          },
+        },
+
+        B10: {
+          value: "₹90,000",
+
+          style: {
+            backgroundColor:
+              "#DCFCE7",
+            color:
+              "#166534",
+            fontWeight:
+              "700",
+            textAlign:
+              "right",
+          },
+        },
+
+        D10: {
+          value:
+            "Total Expenses",
+
+          style: {
+            backgroundColor:
+              "#FEE2E2",
+            color:
+              "#B91C1C",
+            fontWeight:
+              "700",
+          },
+        },
+
+        E10: {
+          value: "₹42,900",
+
+          style: {
+            backgroundColor:
+              "#FEE2E2",
+            color:
+              "#B91C1C",
+            fontWeight:
+              "700",
+            textAlign:
+              "right",
+          },
+        },
+
+        A12: {
+          value: "Savings",
+
+          style: {
+            backgroundColor:
+              "#ECFDF5",
+            color:
+              "#047857",
+            fontWeight:
+              "700",
+            fontSize:
+              "16px",
+          },
+        },
+
+        B12: {
+          value: "₹47,100",
+
+          style: {
+            backgroundColor:
+              "#D1FAE5",
+            color:
+              "#047857",
+            fontWeight:
+              "700",
+            fontSize:
+              "16px",
+            textAlign:
+              "right",
+          },
+        },
+      };
+    }
+
+    // ==================================================
+    // TASK LIST
+    // ==================================================
+
+    if (
+      selectedTemplateId ===
+      "task-list"
+    ) {
+      return {
+        A1: {
+          value:
+            "Task List",
+
+          style: {
+            backgroundColor:
+              "#EFF6FF",
+            color:
+              "#1D4ED8",
+            fontWeight:
+              "700",
+            fontSize:
+              "18px",
+          },
+        },
+
+        A3: {
+          value:
+            "Completed",
+
+          style: {
+            ...blueHeaderStyle,
+          },
+        },
+
+        B3: {
+          value: "Task",
+
+          style: {
+            ...blueHeaderStyle,
+          },
+        },
+
+        C3: {
+          value:
+            "Priority",
+
+          style: {
+            ...blueHeaderStyle,
+          },
+        },
+
+        D3: {
+          value:
+            "Due Date",
+
+          style: {
+            ...blueHeaderStyle,
+          },
+        },
+
+        E3: {
+          value: "Notes",
+
+          style: {
+            ...blueHeaderStyle,
+          },
+        },
+
+        A4: {
+          value: "✓",
+
+          style: {
+            backgroundColor:
+              "#DBEAFE",
+            color:
+              "#2563EB",
+            fontWeight:
+              "700",
+            textAlign:
+              "center",
+          },
+        },
+
+        B4: {
+          value:
+            "Prepare report",
+
+          style: {
+            color:
+              "#94A3B8",
+            textDecoration:
+              "line-through",
+          },
+        },
+
+        C4: {
+          value: "High",
+
+          style: {
+            backgroundColor:
+              "#FEE2E2",
+            color:
+              "#B91C1C",
+            fontWeight:
+              "600",
+            textAlign:
+              "center",
+          },
+        },
+
+        D4: {
+          value:
+            "24 Aug 2026",
+
+          style: {
+            ...centerStyle,
+          },
+        },
+
+        E4: {
+          value:
+            "Final review completed",
+        },
+
+        A5: {
+          value: "",
+
+          style: {
+            textAlign:
+              "center",
+          },
+        },
+
+        B5: {
+          value:
+            "Review design",
+        },
+
+        C5: {
+          value: "High",
+
+          style: {
+            backgroundColor:
+              "#FEE2E2",
+            color:
+              "#B91C1C",
+            fontWeight:
+              "600",
+            textAlign:
+              "center",
+          },
+        },
+
+        D5: {
+          value:
+            "25 Aug 2026",
+
+          style: {
+            ...centerStyle,
+          },
+        },
+
+        A6: {
+          value: "",
+        },
+
+        B6: {
+          value:
+            "Client call",
+        },
+
+        C6: {
+          value: "Medium",
+
+          style: {
+            backgroundColor:
+              "#FEF3C7",
+            color:
+              "#B45309",
+            fontWeight:
+              "600",
+            textAlign:
+              "center",
+          },
+        },
+
+        D6: {
+          value:
+            "26 Aug 2026",
+
+          style: {
+            ...centerStyle,
+          },
+        },
+
+        A7: {
+          value: "",
+        },
+
+        B7: {
+          value:
+            "Update dashboard",
+        },
+
+        C7: {
+          value: "Medium",
+
+          style: {
+            backgroundColor:
+              "#FEF3C7",
+            color:
+              "#B45309",
+            fontWeight:
+              "600",
+            textAlign:
+              "center",
+          },
+        },
+
+        D7: {
+          value:
+            "27 Aug 2026",
+
+          style: {
+            ...centerStyle,
+          },
+        },
+      };
+    }
+
+    // ==================================================
+    // WEEKLY PLANNER
+    // ==================================================
+
+    if (
+      selectedTemplateId ===
+      "weekly-planner"
+    ) {
+      return {
+        A1: {
+          value:
+            "Weekly Planner",
+
+          style: {
+            backgroundColor:
+              "#F5F3FF",
+            color:
+              "#6D28D9",
+            fontWeight:
+              "700",
+            fontSize:
+              "18px",
+          },
+        },
+
+        A3: {
+          value: "Time",
+
+          style: {
+            backgroundColor:
+              "#EDE9FE",
+            color:
+              "#6D28D9",
+            fontWeight:
+              "700",
+            textAlign:
+              "center",
+          },
+        },
+
+        B3: {
+          value: "Monday",
+
+          style: {
+            ...violetHeaderStyle,
+          },
+        },
+
+        C3: {
+          value: "Tuesday",
+
+          style: {
+            ...violetHeaderStyle,
+          },
+        },
+
+        D3: {
+          value:
+            "Wednesday",
+
+          style: {
+            ...violetHeaderStyle,
+          },
+        },
+
+        E3: {
+          value:
+            "Thursday",
+
+          style: {
+            ...violetHeaderStyle,
+          },
+        },
+
+        F3: {
+          value: "Friday",
+
+          style: {
+            ...violetHeaderStyle,
+          },
+        },
+
+        G3: {
+          value:
+            "Saturday",
+
+          style: {
+            backgroundColor:
+              "#FAE8FF",
+            color:
+              "#A21CAF",
+            fontWeight:
+              "700",
+            textAlign:
+              "center",
+          },
+        },
+
+        H3: {
+          value: "Sunday",
+
+          style: {
+            backgroundColor:
+              "#FAE8FF",
+            color:
+              "#A21CAF",
+            fontWeight:
+              "700",
+            textAlign:
+              "center",
+          },
+        },
+
+        A4: {
+          value: "8:00 AM",
+
+          style: {
+            backgroundColor:
+              "#F8FAFC",
+            color:
+              "#64748B",
+            fontWeight:
+              "600",
+            textAlign:
+              "center",
+          },
+        },
+
+        B4: {
+          value:
+            "Plan weekly goals",
+
+          style: {
+            backgroundColor:
+              "#F5F3FF",
+          },
+        },
+
+        C4: {
+          value: "Class",
+
+          style: {
+            backgroundColor:
+              "#EFF6FF",
+          },
+        },
+
+        D4: {
+          value:
+            "Project work",
+
+          style: {
+            backgroundColor:
+              "#ECFDF5",
+          },
+        },
+
+        E4: {
+          value:
+            "Research",
+
+          style: {
+            backgroundColor:
+              "#FFF7ED",
+          },
+        },
+
+        F4: {
+          value:
+            "Weekly review",
+
+          style: {
+            backgroundColor:
+              "#FEFCE8",
+          },
+        },
+
+        G4: {
+          value:
+            "Personal time",
+
+          style: {
+            backgroundColor:
+              "#FDF2F8",
+          },
+        },
+
+        H4: {
+          value:
+            "Weekly reset",
+
+          style: {
+            backgroundColor:
+              "#FDF2F8",
+          },
+        },
+
+        A5: {
+          value: "10:00 AM",
+
+          style: {
+            backgroundColor:
+              "#F8FAFC",
+            color:
+              "#64748B",
+            fontWeight:
+              "600",
+            textAlign:
+              "center",
+          },
+        },
+
+        B5: {
+          value:
+            "Assignments",
+
+          style: {
+            backgroundColor:
+              "#F5F3FF",
+          },
+        },
+
+        C5: {
+          value:
+            "Project work",
+
+          style: {
+            backgroundColor:
+              "#EFF6FF",
+          },
+        },
+
+        D5: {
+          value: "Meeting",
+
+          style: {
+            backgroundColor:
+              "#ECFDF5",
+          },
+        },
+
+        E5: {
+          value:
+            "Assignments",
+
+          style: {
+            backgroundColor:
+              "#FFF7ED",
+          },
+        },
+
+        F5: {
+          value:
+            "Documentation",
+
+          style: {
+            backgroundColor:
+              "#FEFCE8",
+          },
+        },
+
+        G5: {
+          value:
+            "Shopping",
+
+          style: {
+            backgroundColor:
+              "#FDF2F8",
+          },
+        },
+
+        H5: {
+          value:
+            "Reading",
+
+          style: {
+            backgroundColor:
+              "#FDF2F8",
+          },
+        },
+
+        A6: {
+          value: "1:00 PM",
+
+          style: {
+            backgroundColor:
+              "#F8FAFC",
+            color:
+              "#64748B",
+            fontWeight:
+              "600",
+            textAlign:
+              "center",
+          },
+        },
+
+        B6: {
+          value: "Lunch",
+
+          style: {
+            backgroundColor:
+              "#F0FDFA",
+            textAlign:
+              "center",
+          },
+        },
+
+        C6: {
+          value: "Lunch",
+
+          style: {
+            backgroundColor:
+              "#F0FDFA",
+            textAlign:
+              "center",
+          },
+        },
+
+        D6: {
+          value: "Lunch",
+
+          style: {
+            backgroundColor:
+              "#F0FDFA",
+            textAlign:
+              "center",
+          },
+        },
+
+        E6: {
+          value: "Lunch",
+
+          style: {
+            backgroundColor:
+              "#F0FDFA",
+            textAlign:
+              "center",
+          },
+        },
+
+        F6: {
+          value: "Lunch",
+
+          style: {
+            backgroundColor:
+              "#F0FDFA",
+            textAlign:
+              "center",
+          },
+        },
+
+        G6: {
+          value: "Lunch",
+
+          style: {
+            backgroundColor:
+              "#F0FDFA",
+            textAlign:
+              "center",
+          },
+        },
+
+        H6: {
+          value: "Lunch",
+
+          style: {
+            backgroundColor:
+              "#F0FDFA",
+            textAlign:
+              "center",
+          },
+        },
+
+        A7: {
+          value: "3:00 PM",
+
+          style: {
+            backgroundColor:
+              "#F8FAFC",
+            color:
+              "#64748B",
+            fontWeight:
+              "600",
+            textAlign:
+              "center",
+          },
+        },
+
+        B7: {
+          value:
+            "Product learning",
+
+          style: {
+            backgroundColor:
+              "#F5F3FF",
+          },
+        },
+
+        C7: {
+          value:
+            "Coding practice",
+
+          style: {
+            backgroundColor:
+              "#EFF6FF",
+          },
+        },
+
+        D7: {
+          value:
+            "Research work",
+
+          style: {
+            backgroundColor:
+              "#ECFDF5",
+          },
+        },
+
+        E7: {
+          value:
+            "Presentation prep",
+
+          style: {
+            backgroundColor:
+              "#FFF7ED",
+          },
+        },
+
+        F7: {
+          value:
+            "Career prep",
+
+          style: {
+            backgroundColor:
+              "#FEFCE8",
+          },
+        },
+
+        G7: {
+          value:
+            "Free time",
+
+          style: {
+            backgroundColor:
+              "#FDF2F8",
+          },
+        },
+
+        H7: {
+          value:
+            "Plan next week",
+
+          style: {
+            backgroundColor:
+              "#FDF2F8",
+          },
+        },
+
+        A8: {
+          value: "6:00 PM",
+
+          style: {
+            backgroundColor:
+              "#F8FAFC",
+            color:
+              "#64748B",
+            fontWeight:
+              "600",
+            textAlign:
+              "center",
+          },
+        },
+
+        B8: {
+          value:
+            "Exercise",
+
+          style: {
+            backgroundColor:
+              "#ECFDF5",
+          },
+        },
+
+        C8: {
+          value:
+            "Free time",
+
+          style: {
+            backgroundColor:
+              "#F8FAFC",
+          },
+        },
+
+        D8: {
+          value:
+            "Exercise",
+
+          style: {
+            backgroundColor:
+              "#ECFDF5",
+          },
+        },
+
+        E8: {
+          value:
+            "Free time",
+
+          style: {
+            backgroundColor:
+              "#F8FAFC",
+          },
+        },
+
+        F8: {
+          value:
+            "Weekend planning",
+
+          style: {
+            backgroundColor:
+              "#FEF3C7",
+          },
+        },
+
+        A10: {
+          value:
+            "Top Priorities",
+
+          style: {
+            backgroundColor:
+              "#EDE9FE",
+            color:
+              "#6D28D9",
+            fontWeight:
+              "700",
+          },
+        },
+
+        A11: {
+          value:
+            "1. Complete major task",
+
+          style: {
+            backgroundColor:
+              "#FAFAFA",
+          },
+        },
+
+        A12: {
+          value:
+            "2. Review project progress",
+
+          style: {
+            backgroundColor:
+              "#FAFAFA",
+          },
+        },
+
+        A13: {
+          value:
+            "3. Prepare for next week",
+
+          style: {
+            backgroundColor:
+              "#FAFAFA",
+          },
+        },
+      };
+    }
+
+    return {};
+  };
+
+    // ==================================================
     // INITIAL SPREADSHEET CONTENT
     // ==================================================
+
+    const templateCells =
+      getTemplateCells(
+        templateId
+      );
 
     const initialSpreadsheet = {
       version: 1,
 
+      templateId:
+        templateId || null,
+
       sheets: [
         {
           id: "sheet-1",
-          name: "Sheet1",
+
+          name:
+            templateId ===
+            "weekly-planner"
+              ? "Weekly Planner"
+              : templateId ===
+                  "monthly-budget"
+                ? "Budget"
+                : templateId ===
+                    "project-tracker"
+                  ? "Project Tracker"
+                  : templateId ===
+                      "task-list"
+                    ? "Tasks"
+                    : "Sheet1",
 
           rows: 50,
           columns: 26,
 
-          cells: {},
+          cells:
+            templateCells,
         },
       ],
 
@@ -1707,16 +3248,15 @@ const createSpreadsheet = async (req, res) => {
       throw insertError;
     }
 
-    // ==================================================
-    // RESPONSE
-    // ==================================================
-
     return res.status(201).json({
       message:
-        "Spreadsheet created successfully",
+        templateId
+          ? "Spreadsheet created from template successfully"
+          : "Spreadsheet created successfully",
 
       spreadsheet: {
-        id: file.id,
+        id:
+          file.id,
 
         name:
           file.name,
@@ -1758,14 +3298,18 @@ const createSpreadsheet = async (req, res) => {
       error
     );
 
-    if (uploadedStoragePath) {
+    if (
+      uploadedStoragePath
+    ) {
       try {
         await deleteFileFromStorage(
           uploadedStoragePath
         );
-      } catch (cleanupError) {
+      } catch (
+        cleanupError
+      ) {
         console.error(
-          "Create spreadsheet cleanup error:",
+          "Spreadsheet cleanup error:",
           cleanupError
         );
       }
