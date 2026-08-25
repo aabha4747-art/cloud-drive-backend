@@ -3624,16 +3624,14 @@ const createPresentation = async (req, res) => {
     const {
       name,
       folderId = null,
+      templateId = null,
     } = req.body;
 
     // ==================================================
     // VALIDATE NAME
     // ==================================================
 
-    if (
-      !name ||
-      !name.trim()
-    ) {
+    if (!name || !name.trim()) {
       return res.status(400).json({
         error: {
           code: "VALIDATION_ERROR",
@@ -3675,7 +3673,7 @@ const createPresentation = async (req, res) => {
     }
 
     // ==================================================
-    // CHECK DUPLICATE
+    // DUPLICATE CHECK
     // ==================================================
 
     let duplicateQuery =
@@ -3710,8 +3708,10 @@ const createPresentation = async (req, res) => {
     }
 
     const {
-      data: existingPresentation,
-      error: duplicateError,
+      data:
+        existingPresentation,
+      error:
+        duplicateError,
     } =
       await duplicateQuery.maybeSingle();
 
@@ -3724,7 +3724,6 @@ const createPresentation = async (req, res) => {
         error: {
           code:
             "PRESENTATION_EXISTS",
-
           message:
             "A presentation with this name already exists here",
         },
@@ -3732,77 +3731,2308 @@ const createPresentation = async (req, res) => {
     }
 
     // ==================================================
-    // INITIAL PRESENTATION
+    // HELPERS
     // ==================================================
 
-    const initialPresentation = {
-      version: 1,
-
-      slides: [
-        {
-          id: "slide-1",
-
-          background: {
-            type: "solid",
-            value: "#ffffff",
-          },
-
-          elements: [
-            {
-              id: "title-1",
-
-              type: "text",
-
-              x: 10,
-              y: 25,
-
-              width: 80,
-              height: 15,
-
-              text:
-                "Click to add title",
-
-              style: {
-                fontSize: 32,
-                fontWeight: "700",
-                textAlign: "center",
-                color: "#0f172a",
-              },
-            },
-
-            {
-              id: "subtitle-1",
-
-              type: "text",
-
-              x: 15,
-              y: 48,
-
-              width: 70,
-              height: 10,
-
-              text:
-                "Click to add subtitle",
-
-              style: {
-                fontSize: 18,
-                fontWeight: "400",
-                textAlign: "center",
-                color: "#64748b",
-              },
-            },
-          ],
-        },
-      ],
-
-      activeSlideId:
-        "slide-1",
-
-      settings: {
-        aspectRatio:
-          "16:9",
+    const textElement = ({
+      id,
+      x,
+      y,
+      width,
+      height,
+      text,
+      fontSize = 22,
+      fontWeight = "400",
+      fontFamily = "Arial",
+      textAlign = "left",
+      color = "#0f172a",
+      lineHeight = 1.2,
+      fontStyle = "normal",
+    }) => ({
+      id,
+      type: "text",
+      x,
+      y,
+      width,
+      height,
+      text,
+      style: {
+        fontSize,
+        fontWeight,
+        fontFamily,
+        textAlign,
+        color,
+        lineHeight,
+        fontStyle,
       },
-    };
+    });
+
+    const shapeElement = ({
+      id,
+      x,
+      y,
+      width,
+      height,
+      backgroundColor,
+      borderRadius = "0px",
+      border = "none",
+      opacity = 1,
+      boxShadow,
+    }) => ({
+      id,
+      type: "shape",
+      x,
+      y,
+      width,
+      height,
+      style: {
+        backgroundColor,
+        borderRadius,
+        border,
+        opacity,
+        boxShadow,
+      },
+    });
+
+    const makeSlide = ({
+      id,
+      background,
+      elements,
+    }) => ({
+      id,
+      background,
+      elements,
+    });
+
+    // ==================================================
+    // BLANK PRESENTATION
+    // ==================================================
+
+    const blankPresentation =
+      () => ({
+        version: 1,
+
+        templateId: null,
+
+        slides: [
+          makeSlide({
+            id: "slide-1",
+
+            background: {
+              type: "solid",
+              value: "#ffffff",
+            },
+
+            elements: [
+              textElement({
+                id: "title-1",
+                x: 10,
+                y: 25,
+                width: 80,
+                height: 16,
+                text:
+                  "Click to add title",
+                fontSize: 34,
+                fontWeight: "700",
+                textAlign:
+                  "center",
+              }),
+
+              textElement({
+                id: "subtitle-1",
+                x: 15,
+                y: 50,
+                width: 70,
+                height: 10,
+                text:
+                  "Click to add subtitle",
+                fontSize: 18,
+                textAlign:
+                  "center",
+                color:
+                  "#64748b",
+              }),
+            ],
+          }),
+        ],
+
+        activeSlideId:
+          "slide-1",
+
+        settings: {
+          aspectRatio: "16:9",
+        },
+      });
+
+    // ==================================================
+    // RESEARCH PRESENTATION
+    // ==================================================
+
+    const researchTemplate =
+      () => ({
+        version: 1,
+
+        templateId:
+          "research-presentation",
+
+        settings: {
+          aspectRatio: "16:9",
+        },
+
+        activeSlideId:
+          "research-1",
+
+        slides: [
+          // SLIDE 1
+          makeSlide({
+            id: "research-1",
+
+            background: {
+              type: "gradient",
+              value:
+                "linear-gradient(135deg, #0f172a 0%, #0f766e 100%)",
+            },
+
+            elements: [
+              shapeElement({
+                id: "r1-shape-1",
+                x: 68,
+                y: 8,
+                width: 22,
+                height: 34,
+                backgroundColor:
+                  "#14b8a6",
+                borderRadius:
+                  "30px",
+                opacity: 0.9,
+              }),
+
+              shapeElement({
+                id: "r1-shape-2",
+                x: 76,
+                y: 54,
+                width: 12,
+                height: 21,
+                backgroundColor:
+                  "#5eead4",
+                borderRadius:
+                  "999px",
+                opacity: 0.6,
+              }),
+
+              textElement({
+                id: "r1-title",
+                x: 8,
+                y: 24,
+                width: 55,
+                height: 20,
+                text:
+                  "Research Presentation",
+                fontSize: 48,
+                fontWeight: "700",
+                color: "#ffffff",
+              }),
+
+              textElement({
+                id: "r1-subtitle",
+                x: 8,
+                y: 49,
+                width: 48,
+                height: 12,
+                text:
+                  "Study title • Researcher name • Institution",
+                fontSize: 20,
+                color:
+                  "#ccfbf1",
+              }),
+
+              textElement({
+                id: "r1-footer",
+                x: 8,
+                y: 80,
+                width: 30,
+                height: 7,
+                text:
+                  "RESEARCH • 2026",
+                fontSize: 12,
+                fontWeight: "700",
+                color:
+                  "#99f6e4",
+              }),
+            ],
+          }),
+
+          // SLIDE 2
+          makeSlide({
+            id: "research-2",
+
+            background: {
+              type: "solid",
+              value: "#f8fafc",
+            },
+
+            elements: [
+              shapeElement({
+                id: "r2-bar",
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 5,
+                backgroundColor:
+                  "#0f766e",
+              }),
+
+              textElement({
+                id: "r2-title",
+                x: 7,
+                y: 10,
+                width: 50,
+                height: 10,
+                text:
+                  "Background & Problem",
+                fontSize: 34,
+                fontWeight: "700",
+                color:
+                  "#0f172a",
+              }),
+
+              textElement({
+                id: "r2-body",
+                x: 7,
+                y: 27,
+                width: 50,
+                height: 45,
+                text:
+                  "• Describe the context of the research\n• Explain the problem being investigated\n• Summarize why the problem matters\n• Highlight the current research gap",
+                fontSize: 20,
+                color:
+                  "#334155",
+                lineHeight: 1.5,
+              }),
+
+              shapeElement({
+                id: "r2-card",
+                x: 64,
+                y: 24,
+                width: 27,
+                height: 45,
+                backgroundColor:
+                  "#ccfbf1",
+                borderRadius:
+                  "24px",
+              }),
+
+              textElement({
+                id: "r2-card-number",
+                x: 67,
+                y: 33,
+                width: 21,
+                height: 14,
+                text: "01",
+                fontSize: 52,
+                fontWeight: "700",
+                textAlign:
+                  "center",
+                color:
+                  "#0f766e",
+              }),
+
+              textElement({
+                id: "r2-card-text",
+                x: 68,
+                y: 52,
+                width: 19,
+                height: 10,
+                text:
+                  "Define the problem clearly",
+                fontSize: 16,
+                fontWeight: "600",
+                textAlign:
+                  "center",
+                color:
+                  "#115e59",
+              }),
+            ],
+          }),
+
+          // SLIDE 3
+          makeSlide({
+            id: "research-3",
+
+            background: {
+              type: "solid",
+              value: "#ffffff",
+            },
+
+            elements: [
+              textElement({
+                id: "r3-title",
+                x: 7,
+                y: 8,
+                width: 50,
+                height: 10,
+                text:
+                  "Research Objectives",
+                fontSize: 34,
+                fontWeight: "700",
+              }),
+
+              textElement({
+                id: "r3-sub",
+                x: 7,
+                y: 19,
+                width: 50,
+                height: 8,
+                text:
+                  "What this study aims to achieve",
+                fontSize: 16,
+                color:
+                  "#64748b",
+              }),
+
+              ...[
+                {
+                  y: 34,
+                  number: "01",
+                  title:
+                    "Primary Objective",
+                  text:
+                    "State the main research objective.",
+                },
+                {
+                  y: 52,
+                  number: "02",
+                  title:
+                    "Secondary Objective",
+                  text:
+                    "Describe the second major goal.",
+                },
+                {
+                  y: 70,
+                  number: "03",
+                  title:
+                    "Expected Outcome",
+                  text:
+                    "Clarify what the study should reveal.",
+                },
+              ].flatMap(
+                (
+                  item,
+                  index
+                ) => [
+                  shapeElement({
+                    id:
+                      `r3-circle-${index}`,
+                    x: 8,
+                    y: item.y,
+                    width: 7,
+                    height: 12,
+                    backgroundColor:
+                      "#0f766e",
+                    borderRadius:
+                      "999px",
+                  }),
+
+                  textElement({
+                    id:
+                      `r3-number-${index}`,
+                    x: 8,
+                    y:
+                      item.y + 2,
+                    width: 7,
+                    height: 5,
+                    text:
+                      item.number,
+                    fontSize: 14,
+                    fontWeight:
+                      "700",
+                    textAlign:
+                      "center",
+                    color:
+                      "#ffffff",
+                  }),
+
+                  textElement({
+                    id:
+                      `r3-title-${index}`,
+                    x: 18,
+                    y:
+                      item.y - 1,
+                    width: 35,
+                    height: 7,
+                    text:
+                      item.title,
+                    fontSize: 20,
+                    fontWeight:
+                      "700",
+                    color:
+                      "#0f172a",
+                  }),
+
+                  textElement({
+                    id:
+                      `r3-text-${index}`,
+                    x: 18,
+                    y:
+                      item.y + 7,
+                    width: 55,
+                    height: 6,
+                    text:
+                      item.text,
+                    fontSize: 16,
+                    color:
+                      "#64748b",
+                  }),
+                ]
+              ),
+            ],
+          }),
+
+          // SLIDE 4
+          makeSlide({
+            id: "research-4",
+
+            background: {
+              type: "gradient",
+              value:
+                "linear-gradient(135deg, #ecfeff 0%, #f0fdfa 100%)",
+            },
+
+            elements: [
+              textElement({
+                id: "r4-title",
+                x: 7,
+                y: 8,
+                width: 45,
+                height: 10,
+                text:
+                  "Methodology",
+                fontSize: 34,
+                fontWeight: "700",
+                color:
+                  "#134e4a",
+              }),
+
+              textElement({
+                id: "r4-sub",
+                x: 7,
+                y: 19,
+                width: 50,
+                height: 7,
+                text:
+                  "A simple overview of the research process",
+                fontSize: 16,
+                color:
+                  "#64748b",
+              }),
+
+              ...[
+                {
+                  x: 7,
+                  title:
+                    "Sample",
+                  text:
+                    "Participants / samples",
+                },
+                {
+                  x: 29,
+                  title:
+                    "Method",
+                  text:
+                    "Experimental approach",
+                },
+                {
+                  x: 51,
+                  title:
+                    "Analysis",
+                  text:
+                    "Data processing",
+                },
+                {
+                  x: 73,
+                  title:
+                    "Validation",
+                  text:
+                    "Verification process",
+                },
+              ].flatMap(
+                (
+                  item,
+                  index
+                ) => [
+                  shapeElement({
+                    id:
+                      `r4-card-${index}`,
+                    x: item.x,
+                    y: 37,
+                    width: 18,
+                    height: 35,
+                    backgroundColor:
+                      "#ffffff",
+                    borderRadius:
+                      "20px",
+                    border:
+                      "1px solid #99f6e4",
+                    boxShadow:
+                      "0 10px 25px rgba(15,118,110,0.08)",
+                  }),
+
+                  textElement({
+                    id:
+                      `r4-step-${index}`,
+                    x:
+                      item.x + 2,
+                    y: 41,
+                    width: 14,
+                    height: 7,
+                    text:
+                      `0${index + 1}`,
+                    fontSize: 16,
+                    fontWeight:
+                      "700",
+                    textAlign:
+                      "center",
+                    color:
+                      "#14b8a6",
+                  }),
+
+                  textElement({
+                    id:
+                      `r4-card-title-${index}`,
+                    x:
+                      item.x + 2,
+                    y: 51,
+                    width: 14,
+                    height: 8,
+                    text:
+                      item.title,
+                    fontSize: 18,
+                    fontWeight:
+                      "700",
+                    textAlign:
+                      "center",
+                    color:
+                      "#134e4a",
+                  }),
+
+                  textElement({
+                    id:
+                      `r4-card-text-${index}`,
+                    x:
+                      item.x + 2,
+                    y: 62,
+                    width: 14,
+                    height: 7,
+                    text:
+                      item.text,
+                    fontSize: 13,
+                    textAlign:
+                      "center",
+                    color:
+                      "#64748b",
+                  }),
+                ]
+              ),
+            ],
+          }),
+
+          // SLIDE 5
+          makeSlide({
+            id: "research-5",
+
+            background: {
+              type: "solid",
+              value: "#ffffff",
+            },
+
+            elements: [
+              textElement({
+                id: "r5-title",
+                x: 7,
+                y: 8,
+                width: 50,
+                height: 10,
+                text:
+                  "Results",
+                fontSize: 34,
+                fontWeight: "700",
+              }),
+
+              textElement({
+                id: "r5-sub",
+                x: 7,
+                y: 19,
+                width: 55,
+                height: 7,
+                text:
+                  "Present the most important findings",
+                fontSize: 16,
+                color:
+                  "#64748b",
+              }),
+
+              shapeElement({
+                id: "r5-chart-card",
+                x: 7,
+                y: 32,
+                width: 55,
+                height: 45,
+                backgroundColor:
+                  "#f8fafc",
+                borderRadius:
+                  "20px",
+                border:
+                  "1px solid #e2e8f0",
+              }),
+
+              ...[
+                {
+                  x: 13,
+                  height: 17,
+                },
+                {
+                  x: 23,
+                  height: 27,
+                },
+                {
+                  x: 33,
+                  height: 22,
+                },
+                {
+                  x: 43,
+                  height: 36,
+                },
+                {
+                  x: 53,
+                  height: 31,
+                },
+              ].map(
+                (
+                  bar,
+                  index
+                ) =>
+                  shapeElement({
+                    id:
+                      `r5-bar-${index}`,
+                    x: bar.x,
+                    y:
+                      69 -
+                      bar.height,
+                    width: 5,
+                    height:
+                      bar.height,
+                    backgroundColor:
+                      index === 3
+                        ? "#0f766e"
+                        : "#5eead4",
+                    borderRadius:
+                      "7px 7px 0 0",
+                  })
+              ),
+
+              shapeElement({
+                id: "r5-stat",
+                x: 69,
+                y: 32,
+                width: 24,
+                height: 20,
+                backgroundColor:
+                  "#ccfbf1",
+                borderRadius:
+                  "20px",
+              }),
+
+              textElement({
+                id: "r5-stat-value",
+                x: 72,
+                y: 35,
+                width: 18,
+                height: 9,
+                text: "78%",
+                fontSize: 36,
+                fontWeight: "700",
+                textAlign:
+                  "center",
+                color:
+                  "#0f766e",
+              }),
+
+              textElement({
+                id: "r5-stat-label",
+                x: 72,
+                y: 46,
+                width: 18,
+                height: 5,
+                text:
+                  "Key result",
+                fontSize: 13,
+                textAlign:
+                  "center",
+                color:
+                  "#115e59",
+              }),
+
+              textElement({
+                id: "r5-insight",
+                x: 69,
+                y: 59,
+                width: 24,
+                height: 17,
+                text:
+                  "Add a concise interpretation of the result here.",
+                fontSize: 16,
+                color:
+                  "#475569",
+                lineHeight: 1.4,
+              }),
+            ],
+          }),
+
+          // SLIDE 6
+          makeSlide({
+            id: "research-6",
+
+            background: {
+              type: "gradient",
+              value:
+                "linear-gradient(135deg, #0f172a 0%, #134e4a 100%)",
+            },
+
+            elements: [
+              textElement({
+                id: "r6-title",
+                x: 8,
+                y: 12,
+                width: 50,
+                height: 10,
+                text:
+                  "Conclusion",
+                fontSize: 36,
+                fontWeight: "700",
+                color:
+                  "#ffffff",
+              }),
+
+              textElement({
+                id: "r6-body",
+                x: 8,
+                y: 30,
+                width: 52,
+                height: 35,
+                text:
+                  "• Summarize the major finding\n• State the significance of the work\n• Mention limitations\n• Highlight future research opportunities",
+                fontSize: 20,
+                color:
+                  "#d1fae5",
+                lineHeight: 1.5,
+              }),
+
+              shapeElement({
+                id: "r6-card",
+                x: 69,
+                y: 24,
+                width: 22,
+                height: 45,
+                backgroundColor:
+                  "#14b8a6",
+                borderRadius:
+                  "28px",
+              }),
+
+              textElement({
+                id: "r6-card-title",
+                x: 72,
+                y: 34,
+                width: 16,
+                height: 12,
+                text:
+                  "Thank You",
+                fontSize: 28,
+                fontWeight: "700",
+                textAlign:
+                  "center",
+                color:
+                  "#ffffff",
+              }),
+
+              textElement({
+                id: "r6-card-sub",
+                x: 72,
+                y: 52,
+                width: 16,
+                height: 8,
+                text:
+                  "Questions?",
+                fontSize: 16,
+                textAlign:
+                  "center",
+                color:
+                  "#ccfbf1",
+              }),
+            ],
+          }),
+        ],
+      });
+
+    // ==================================================
+    // PITCH DECK
+    // ==================================================
+
+    const pitchDeckTemplate =
+      () => ({
+        version: 1,
+
+        templateId:
+          "pitch-deck",
+
+        settings: {
+          aspectRatio: "16:9",
+        },
+
+        activeSlideId:
+          "pitch-1",
+
+        slides: [
+          makeSlide({
+            id: "pitch-1",
+
+            background: {
+              type: "gradient",
+              value:
+                "linear-gradient(135deg, #020617 0%, #1e293b 100%)",
+            },
+
+            elements: [
+              shapeElement({
+                id: "p1-orange",
+                x: 67,
+                y: 12,
+                width: 24,
+                height: 42,
+                backgroundColor:
+                  "#f97316",
+                borderRadius:
+                  "36px",
+              }),
+
+              shapeElement({
+                id: "p1-yellow",
+                x: 75,
+                y: 55,
+                width: 13,
+                height: 23,
+                backgroundColor:
+                  "#fdba74",
+                borderRadius:
+                  "999px",
+              }),
+
+              textElement({
+                id: "p1-title",
+                x: 8,
+                y: 24,
+                width: 52,
+                height: 20,
+                text:
+                  "Build the future",
+                fontSize: 52,
+                fontWeight: "700",
+                color:
+                  "#ffffff",
+              }),
+
+              textElement({
+                id: "p1-sub",
+                x: 8,
+                y: 49,
+                width: 48,
+                height: 12,
+                text:
+                  "Your company • One-line value proposition",
+                fontSize: 20,
+                color:
+                  "#cbd5e1",
+              }),
+
+              textElement({
+                id: "p1-tag",
+                x: 8,
+                y: 78,
+                width: 25,
+                height: 6,
+                text:
+                  "PITCH DECK",
+                fontSize: 12,
+                fontWeight: "700",
+                color:
+                  "#fb923c",
+              }),
+            ],
+          }),
+
+          makeSlide({
+            id: "pitch-2",
+
+            background: {
+              type: "solid",
+              value: "#ffffff",
+            },
+
+            elements: [
+              textElement({
+                id: "p2-title",
+                x: 7,
+                y: 9,
+                width: 40,
+                height: 10,
+                text:
+                  "The Problem",
+                fontSize: 36,
+                fontWeight: "700",
+              }),
+
+              textElement({
+                id: "p2-body",
+                x: 7,
+                y: 27,
+                width: 48,
+                height: 35,
+                text:
+                  "Describe the customer pain point clearly.\n\nExplain who experiences it, how often it occurs, and why existing solutions are insufficient.",
+                fontSize: 20,
+                color:
+                  "#475569",
+                lineHeight: 1.45,
+              }),
+
+              shapeElement({
+                id: "p2-stat-card",
+                x: 65,
+                y: 25,
+                width: 27,
+                height: 42,
+                backgroundColor:
+                  "#fff7ed",
+                borderRadius:
+                  "28px",
+              }),
+
+              textElement({
+                id: "p2-stat",
+                x: 68,
+                y: 34,
+                width: 21,
+                height: 14,
+                text:
+                  "73%",
+                fontSize: 46,
+                fontWeight: "700",
+                textAlign:
+                  "center",
+                color:
+                  "#ea580c",
+              }),
+
+              textElement({
+                id: "p2-stat-label",
+                x: 68,
+                y: 52,
+                width: 21,
+                height: 10,
+                text:
+                  "Add your strongest problem statistic",
+                fontSize: 14,
+                textAlign:
+                  "center",
+                color:
+                  "#9a3412",
+              }),
+            ],
+          }),
+
+          makeSlide({
+            id: "pitch-3",
+
+            background: {
+              type: "gradient",
+              value:
+                "linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%)",
+            },
+
+            elements: [
+              textElement({
+                id: "p3-title",
+                x: 7,
+                y: 9,
+                width: 50,
+                height: 10,
+                text:
+                  "Our Solution",
+                fontSize: 36,
+                fontWeight: "700",
+                color:
+                  "#7c2d12",
+              }),
+
+              textElement({
+                id: "p3-copy",
+                x: 7,
+                y: 27,
+                width: 45,
+                height: 32,
+                text:
+                  "Explain your product simply.\n\nFocus on the benefit, not just the feature.",
+                fontSize: 20,
+                color:
+                  "#9a3412",
+                lineHeight: 1.5,
+              }),
+
+              shapeElement({
+                id: "p3-product",
+                x: 61,
+                y: 22,
+                width: 31,
+                height: 50,
+                backgroundColor:
+                  "#ffffff",
+                borderRadius:
+                  "30px",
+                boxShadow:
+                  "0 20px 40px rgba(124,45,18,0.14)",
+              }),
+
+              shapeElement({
+                id: "p3-inner",
+                x: 66,
+                y: 29,
+                width: 21,
+                height: 30,
+                backgroundColor:
+                  "#fb923c",
+                borderRadius:
+                  "18px",
+              }),
+
+              textElement({
+                id: "p3-product-text",
+                x: 67,
+                y: 39,
+                width: 19,
+                height: 9,
+                text:
+                  "PRODUCT",
+                fontSize: 18,
+                fontWeight: "700",
+                textAlign:
+                  "center",
+                color:
+                  "#ffffff",
+              }),
+            ],
+          }),
+
+          makeSlide({
+            id: "pitch-4",
+
+            background: {
+              type: "solid",
+              value: "#0f172a",
+            },
+
+            elements: [
+              textElement({
+                id: "p4-title",
+                x: 7,
+                y: 9,
+                width: 45,
+                height: 10,
+                text:
+                  "Market Opportunity",
+                fontSize: 36,
+                fontWeight: "700",
+                color:
+                  "#ffffff",
+              }),
+
+              ...[
+                {
+                  x: 8,
+                  value: "$12B",
+                  label: "TAM",
+                },
+                {
+                  x: 37,
+                  value: "$4B",
+                  label: "SAM",
+                },
+                {
+                  x: 66,
+                  value: "$800M",
+                  label: "SOM",
+                },
+              ].flatMap(
+                (
+                  item,
+                  index
+                ) => [
+                  shapeElement({
+                    id:
+                      `p4-card-${index}`,
+                    x: item.x,
+                    y: 34,
+                    width: 23,
+                    height: 28,
+                    backgroundColor:
+                      "#1e293b",
+                    borderRadius:
+                      "24px",
+                    border:
+                      "1px solid #334155",
+                  }),
+
+                  textElement({
+                    id:
+                      `p4-value-${index}`,
+                    x:
+                      item.x + 2,
+                    y: 40,
+                    width: 19,
+                    height: 10,
+                    text:
+                      item.value,
+                    fontSize: 32,
+                    fontWeight:
+                      "700",
+                    textAlign:
+                      "center",
+                    color:
+                      "#fb923c",
+                  }),
+
+                  textElement({
+                    id:
+                      `p4-label-${index}`,
+                    x:
+                      item.x + 2,
+                    y: 53,
+                    width: 19,
+                    height: 5,
+                    text:
+                      item.label,
+                    fontSize: 15,
+                    fontWeight:
+                      "700",
+                    textAlign:
+                      "center",
+                    color:
+                      "#cbd5e1",
+                  }),
+                ]
+              ),
+            ],
+          }),
+
+          makeSlide({
+            id: "pitch-5",
+
+            background: {
+              type: "solid",
+              value: "#ffffff",
+            },
+
+            elements: [
+              textElement({
+                id: "p5-title",
+                x: 7,
+                y: 9,
+                width: 45,
+                height: 10,
+                text:
+                  "Business Model",
+                fontSize: 36,
+                fontWeight: "700",
+              }),
+
+              ...[
+                {
+                  x: 7,
+                  title:
+                    "Customer",
+                  text:
+                    "Who pays?",
+                },
+                {
+                  x: 36,
+                  title:
+                    "Revenue",
+                  text:
+                    "How do you earn?",
+                },
+                {
+                  x: 65,
+                  title:
+                    "Growth",
+                  text:
+                    "How does it scale?",
+                },
+              ].flatMap(
+                (
+                  item,
+                  index
+                ) => [
+                  shapeElement({
+                    id:
+                      `p5-card-${index}`,
+                    x: item.x,
+                    y: 34,
+                    width: 24,
+                    height: 32,
+                    backgroundColor:
+                      index === 1
+                        ? "#fff7ed"
+                        : "#f8fafc",
+                    borderRadius:
+                      "24px",
+                    border:
+                      "1px solid #e2e8f0",
+                  }),
+
+                  textElement({
+                    id:
+                      `p5-title-${index}`,
+                    x:
+                      item.x + 2,
+                    y: 41,
+                    width: 20,
+                    height: 8,
+                    text:
+                      item.title,
+                    fontSize: 20,
+                    fontWeight:
+                      "700",
+                    textAlign:
+                      "center",
+                    color:
+                      index === 1
+                        ? "#ea580c"
+                        : "#0f172a",
+                  }),
+
+                  textElement({
+                    id:
+                      `p5-text-${index}`,
+                    x:
+                      item.x + 3,
+                    y: 54,
+                    width: 18,
+                    height: 8,
+                    text:
+                      item.text,
+                    fontSize: 15,
+                    textAlign:
+                      "center",
+                    color:
+                      "#64748b",
+                  }),
+                ]
+              ),
+            ],
+          }),
+
+          makeSlide({
+            id: "pitch-6",
+
+            background: {
+              type: "gradient",
+              value:
+                "linear-gradient(135deg, #020617 0%, #7c2d12 100%)",
+            },
+
+            elements: [
+              textElement({
+                id: "p6-title",
+                x: 8,
+                y: 22,
+                width: 60,
+                height: 16,
+                text:
+                  "Let's build something great.",
+                fontSize: 46,
+                fontWeight: "700",
+                color:
+                  "#ffffff",
+              }),
+
+              textElement({
+                id: "p6-sub",
+                x: 8,
+                y: 47,
+                width: 45,
+                height: 10,
+                text:
+                  "Contact • email@example.com",
+                fontSize: 20,
+                color:
+                  "#fed7aa",
+              }),
+
+              shapeElement({
+                id: "p6-circle",
+                x: 72,
+                y: 26,
+                width: 16,
+                height: 28,
+                backgroundColor:
+                  "#f97316",
+                borderRadius:
+                  "999px",
+              }),
+            ],
+          }),
+        ],
+      });
+
+    // ==================================================
+    // PROJECT UPDATE
+    // ==================================================
+
+    const projectUpdateTemplate =
+      () => ({
+        version: 1,
+
+        templateId:
+          "project-update",
+
+        settings: {
+          aspectRatio: "16:9",
+        },
+
+        activeSlideId:
+          "update-1",
+
+        slides: [
+          makeSlide({
+            id: "update-1",
+
+            background: {
+              type: "gradient",
+              value:
+                "linear-gradient(135deg, #eff6ff 0%, #eef2ff 100%)",
+            },
+
+            elements: [
+              textElement({
+                id: "u1-title",
+                x: 7,
+                y: 25,
+                width: 55,
+                height: 16,
+                text:
+                  "Project Update",
+                fontSize: 50,
+                fontWeight: "700",
+                color:
+                  "#1e3a8a",
+              }),
+
+              textElement({
+                id: "u1-sub",
+                x: 7,
+                y: 48,
+                width: 48,
+                height: 10,
+                text:
+                  "Project name • Reporting period",
+                fontSize: 20,
+                color:
+                  "#64748b",
+              }),
+
+              shapeElement({
+                id: "u1-card",
+                x: 67,
+                y: 19,
+                width: 24,
+                height: 45,
+                backgroundColor:
+                  "#2563eb",
+                borderRadius:
+                  "28px",
+              }),
+
+              textElement({
+                id: "u1-status",
+                x: 70,
+                y: 31,
+                width: 18,
+                height: 10,
+                text:
+                  "ON TRACK",
+                fontSize: 22,
+                fontWeight: "700",
+                textAlign:
+                  "center",
+                color:
+                  "#ffffff",
+              }),
+
+              textElement({
+                id: "u1-period",
+                x: 70,
+                y: 48,
+                width: 18,
+                height: 8,
+                text:
+                  "August 2026",
+                fontSize: 15,
+                textAlign:
+                  "center",
+                color:
+                  "#dbeafe",
+              }),
+            ],
+          }),
+
+          makeSlide({
+            id: "update-2",
+
+            background: {
+              type: "solid",
+              value: "#ffffff",
+            },
+
+            elements: [
+              textElement({
+                id: "u2-title",
+                x: 7,
+                y: 8,
+                width: 40,
+                height: 10,
+                text:
+                  "At a Glance",
+                fontSize: 34,
+                fontWeight: "700",
+              }),
+
+              ...[
+                {
+                  x: 7,
+                  value: "78%",
+                  label:
+                    "Progress",
+                  color:
+                    "#2563eb",
+                },
+                {
+                  x: 31,
+                  value: "24",
+                  label:
+                    "Tasks Done",
+                  color:
+                    "#7c3aed",
+                },
+                {
+                  x: 55,
+                  value: "2",
+                  label:
+                    "Risks",
+                  color:
+                    "#f59e0b",
+                },
+                {
+                  x: 79,
+                  value: "4",
+                  label:
+                    "Milestones",
+                  color:
+                    "#10b981",
+                },
+              ].flatMap(
+                (
+                  item,
+                  index
+                ) => [
+                  shapeElement({
+                    id:
+                      `u2-card-${index}`,
+                    x: item.x,
+                    y: 34,
+                    width: 17,
+                    height: 28,
+                    backgroundColor:
+                      "#f8fafc",
+                    borderRadius:
+                      "22px",
+                    border:
+                      "1px solid #e2e8f0",
+                  }),
+
+                  textElement({
+                    id:
+                      `u2-value-${index}`,
+                    x:
+                      item.x + 1,
+                    y: 39,
+                    width: 15,
+                    height: 10,
+                    text:
+                      item.value,
+                    fontSize: 30,
+                    fontWeight:
+                      "700",
+                    textAlign:
+                      "center",
+                    color:
+                      item.color,
+                  }),
+
+                  textElement({
+                    id:
+                      `u2-label-${index}`,
+                    x:
+                      item.x + 1,
+                    y: 53,
+                    width: 15,
+                    height: 5,
+                    text:
+                      item.label,
+                    fontSize: 13,
+                    textAlign:
+                      "center",
+                    color:
+                      "#64748b",
+                  }),
+                ]
+              ),
+            ],
+          }),
+
+          makeSlide({
+            id: "update-3",
+
+            background: {
+              type: "solid",
+              value: "#f8fafc",
+            },
+
+            elements: [
+              textElement({
+                id: "u3-title",
+                x: 7,
+                y: 8,
+                width: 45,
+                height: 10,
+                text:
+                  "Milestones",
+                fontSize: 34,
+                fontWeight: "700",
+              }),
+
+              ...[
+                {
+                  y: 29,
+                  number: "01",
+                  text:
+                    "Research completed",
+                },
+                {
+                  y: 43,
+                  number: "02",
+                  text:
+                    "Design approved",
+                },
+                {
+                  y: 57,
+                  number: "03",
+                  text:
+                    "Development in progress",
+                },
+                {
+                  y: 71,
+                  number: "04",
+                  text:
+                    "Testing scheduled",
+                },
+              ].flatMap(
+                (
+                  item,
+                  index
+                ) => [
+                  shapeElement({
+                    id:
+                      `u3-dot-${index}`,
+                    x: 9,
+                    y: item.y,
+                    width: 5,
+                    height: 9,
+                    backgroundColor:
+                      index < 2
+                        ? "#2563eb"
+                        : "#cbd5e1",
+                    borderRadius:
+                      "999px",
+                  }),
+
+                  textElement({
+                    id:
+                      `u3-num-${index}`,
+                    x: 17,
+                    y:
+                      item.y - 1,
+                    width: 10,
+                    height: 6,
+                    text:
+                      item.number,
+                    fontSize: 15,
+                    fontWeight:
+                      "700",
+                    color:
+                      "#2563eb",
+                  }),
+
+                  textElement({
+                    id:
+                      `u3-text-${index}`,
+                    x: 28,
+                    y:
+                      item.y - 1,
+                    width: 48,
+                    height: 7,
+                    text:
+                      item.text,
+                    fontSize: 19,
+                    color:
+                      "#334155",
+                  }),
+                ]
+              ),
+            ],
+          }),
+
+          makeSlide({
+            id: "update-4",
+
+            background: {
+              type: "solid",
+              value: "#ffffff",
+            },
+
+            elements: [
+              textElement({
+                id: "u4-title",
+                x: 7,
+                y: 8,
+                width: 50,
+                height: 10,
+                text:
+                  "Risks & Blockers",
+                fontSize: 34,
+                fontWeight: "700",
+              }),
+
+              ...[
+                {
+                  y: 31,
+                  color:
+                    "#fef3c7",
+                  title:
+                    "Dependency delay",
+                  level:
+                    "MEDIUM",
+                },
+                {
+                  y: 52,
+                  color:
+                    "#fee2e2",
+                  title:
+                    "Resource constraint",
+                  level:
+                    "HIGH",
+                },
+              ].flatMap(
+                (
+                  item,
+                  index
+                ) => [
+                  shapeElement({
+                    id:
+                      `u4-card-${index}`,
+                    x: 7,
+                    y: item.y,
+                    width: 86,
+                    height: 15,
+                    backgroundColor:
+                      item.color,
+                    borderRadius:
+                      "18px",
+                  }),
+
+                  textElement({
+                    id:
+                      `u4-title-${index}`,
+                    x: 10,
+                    y:
+                      item.y + 3,
+                    width: 50,
+                    height: 6,
+                    text:
+                      item.title,
+                    fontSize: 18,
+                    fontWeight:
+                      "700",
+                    color:
+                      "#334155",
+                  }),
+
+                  textElement({
+                    id:
+                      `u4-level-${index}`,
+                    x: 77,
+                    y:
+                      item.y + 3,
+                    width: 12,
+                    height: 6,
+                    text:
+                      item.level,
+                    fontSize: 13,
+                    fontWeight:
+                      "700",
+                    textAlign:
+                      "center",
+                    color:
+                      index === 1
+                        ? "#b91c1c"
+                        : "#b45309",
+                  }),
+                ]
+              ),
+            ],
+          }),
+
+          makeSlide({
+            id: "update-5",
+
+            background: {
+              type: "gradient",
+              value:
+                "linear-gradient(135deg, #1e3a8a 0%, #312e81 100%)",
+            },
+
+            elements: [
+              textElement({
+                id: "u5-title",
+                x: 8,
+                y: 12,
+                width: 45,
+                height: 10,
+                text:
+                  "Next Steps",
+                fontSize: 36,
+                fontWeight: "700",
+                color:
+                  "#ffffff",
+              }),
+
+              textElement({
+                id: "u5-list",
+                x: 8,
+                y: 32,
+                width: 55,
+                height: 35,
+                text:
+                  "01  Complete development\n02  Run validation tests\n03  Resolve open risks\n04  Prepare release plan",
+                fontSize: 22,
+                color:
+                  "#dbeafe",
+                lineHeight: 1.6,
+              }),
+
+              shapeElement({
+                id: "u5-circle",
+                x: 72,
+                y: 31,
+                width: 15,
+                height: 27,
+                backgroundColor:
+                  "#60a5fa",
+                borderRadius:
+                  "999px",
+              }),
+            ],
+          }),
+        ],
+      });
+
+    // ==================================================
+    // PORTFOLIO
+    // ==================================================
+
+    const portfolioTemplate =
+      () => ({
+        version: 1,
+
+        templateId:
+          "portfolio",
+
+        settings: {
+          aspectRatio: "16:9",
+        },
+
+        activeSlideId:
+          "portfolio-1",
+
+        slides: [
+          makeSlide({
+            id: "portfolio-1",
+
+            background: {
+              type: "gradient",
+              value:
+                "linear-gradient(135deg, #fdf2f8 0%, #fff7ed 100%)",
+            },
+
+            elements: [
+              shapeElement({
+                id: "pf1-circle",
+                x: 7,
+                y: 20,
+                width: 22,
+                height: 39,
+                backgroundColor:
+                  "#f9a8d4",
+                borderRadius:
+                  "999px",
+              }),
+
+              textElement({
+                id: "pf1-name",
+                x: 38,
+                y: 24,
+                width: 50,
+                height: 14,
+                text:
+                  "Your Name",
+                fontSize: 48,
+                fontWeight: "700",
+                color:
+                  "#831843",
+              }),
+
+              textElement({
+                id: "pf1-role",
+                x: 38,
+                y: 44,
+                width: 45,
+                height: 8,
+                text:
+                  "Product • Design • Research",
+                fontSize: 20,
+                color:
+                  "#9d174d",
+              }),
+
+              textElement({
+                id: "pf1-intro",
+                x: 38,
+                y: 59,
+                width: 47,
+                height: 13,
+                text:
+                  "A short introduction about your work, interests, and strengths.",
+                fontSize: 17,
+                color:
+                  "#64748b",
+                lineHeight: 1.4,
+              }),
+            ],
+          }),
+
+          makeSlide({
+            id: "portfolio-2",
+
+            background: {
+              type: "solid",
+              value: "#ffffff",
+            },
+
+            elements: [
+              textElement({
+                id: "pf2-title",
+                x: 7,
+                y: 8,
+                width: 40,
+                height: 10,
+                text:
+                  "About Me",
+                fontSize: 36,
+                fontWeight: "700",
+                color:
+                  "#831843",
+              }),
+
+              textElement({
+                id: "pf2-body",
+                x: 7,
+                y: 27,
+                width: 48,
+                height: 40,
+                text:
+                  "Write a concise introduction about your background, experience, interests, and the kind of problems you enjoy solving.",
+                fontSize: 21,
+                color:
+                  "#475569",
+                lineHeight: 1.5,
+              }),
+
+              shapeElement({
+                id: "pf2-card",
+                x: 65,
+                y: 25,
+                width: 27,
+                height: 43,
+                backgroundColor:
+                  "#fdf2f8",
+                borderRadius:
+                  "28px",
+              }),
+
+              textElement({
+                id: "pf2-card-text",
+                x: 69,
+                y: 36,
+                width: 19,
+                height: 18,
+                text:
+                  "Curious\nCreative\nImpact-driven",
+                fontSize: 20,
+                fontWeight: "700",
+                textAlign:
+                  "center",
+                color:
+                  "#be185d",
+                lineHeight: 1.6,
+              }),
+            ],
+          }),
+
+          makeSlide({
+            id: "portfolio-3",
+
+            background: {
+              type: "gradient",
+              value:
+                "linear-gradient(135deg, #fff1f2 0%, #faf5ff 100%)",
+            },
+
+            elements: [
+              textElement({
+                id: "pf3-title",
+                x: 7,
+                y: 8,
+                width: 50,
+                height: 10,
+                text:
+                  "Selected Work",
+                fontSize: 36,
+                fontWeight: "700",
+                color:
+                  "#881337",
+              }),
+
+              ...[
+                {
+                  x: 7,
+                  y: 31,
+                  color:
+                    "#fce7f3",
+                  title:
+                    "Project One",
+                },
+                {
+                  x: 52,
+                  y: 31,
+                  color:
+                    "#ffedd5",
+                  title:
+                    "Project Two",
+                },
+                {
+                  x: 7,
+                  y: 59,
+                  color:
+                    "#ede9fe",
+                  title:
+                    "Project Three",
+                },
+                {
+                  x: 52,
+                  y: 59,
+                  color:
+                    "#dbeafe",
+                  title:
+                    "Project Four",
+                },
+              ].flatMap(
+                (
+                  item,
+                  index
+                ) => [
+                  shapeElement({
+                    id:
+                      `pf3-card-${index}`,
+                    x: item.x,
+                    y: item.y,
+                    width: 40,
+                    height: 21,
+                    backgroundColor:
+                      item.color,
+                    borderRadius:
+                      "22px",
+                  }),
+
+                  textElement({
+                    id:
+                      `pf3-title-${index}`,
+                    x:
+                      item.x + 3,
+                    y:
+                      item.y + 5,
+                    width: 34,
+                    height: 7,
+                    text:
+                      item.title,
+                    fontSize: 18,
+                    fontWeight:
+                      "700",
+                    color:
+                      "#334155",
+                  }),
+
+                  textElement({
+                    id:
+                      `pf3-desc-${index}`,
+                    x:
+                      item.x + 3,
+                    y:
+                      item.y + 13,
+                    width: 34,
+                    height: 5,
+                    text:
+                      "Short project description",
+                    fontSize: 13,
+                    color:
+                      "#64748b",
+                  }),
+                ]
+              ),
+            ],
+          }),
+
+          makeSlide({
+            id: "portfolio-4",
+
+            background: {
+              type: "solid",
+              value: "#ffffff",
+            },
+
+            elements: [
+              textElement({
+                id: "pf4-title",
+                x: 7,
+                y: 8,
+                width: 50,
+                height: 10,
+                text:
+                  "Skills & Strengths",
+                fontSize: 36,
+                fontWeight: "700",
+                color:
+                  "#831843",
+              }),
+
+              ...[
+                {
+                  x: 7,
+                  title:
+                    "Product",
+                  text:
+                    "Research\nStrategy\nAnalytics",
+                },
+                {
+                  x: 37,
+                  title:
+                    "Design",
+                  text:
+                    "UX thinking\nPrototyping\nStorytelling",
+                },
+                {
+                  x: 67,
+                  title:
+                    "Technology",
+                  text:
+                    "AI\nData\nDevelopment",
+                },
+              ].flatMap(
+                (
+                  item,
+                  index
+                ) => [
+                  shapeElement({
+                    id:
+                      `pf4-card-${index}`,
+                    x: item.x,
+                    y: 32,
+                    width: 25,
+                    height: 38,
+                    backgroundColor:
+                      index === 0
+                        ? "#fdf2f8"
+                        : index ===
+                            1
+                          ? "#fff7ed"
+                          : "#f5f3ff",
+                    borderRadius:
+                      "24px",
+                  }),
+
+                  textElement({
+                    id:
+                      `pf4-title-${index}`,
+                    x:
+                      item.x + 3,
+                    y: 39,
+                    width: 19,
+                    height: 8,
+                    text:
+                      item.title,
+                    fontSize: 21,
+                    fontWeight:
+                      "700",
+                    textAlign:
+                      "center",
+                    color:
+                      "#475569",
+                  }),
+
+                  textElement({
+                    id:
+                      `pf4-text-${index}`,
+                    x:
+                      item.x + 3,
+                    y: 52,
+                    width: 19,
+                    height: 14,
+                    text:
+                      item.text,
+                    fontSize: 15,
+                    textAlign:
+                      "center",
+                    color:
+                      "#64748b",
+                    lineHeight: 1.5,
+                  }),
+                ]
+              ),
+            ],
+          }),
+
+          makeSlide({
+            id: "portfolio-5",
+
+            background: {
+              type: "gradient",
+              value:
+                "linear-gradient(135deg, #831843 0%, #7c2d12 100%)",
+            },
+
+            elements: [
+              textElement({
+                id: "pf5-title",
+                x: 8,
+                y: 25,
+                width: 55,
+                height: 15,
+                text:
+                  "Let's connect.",
+                fontSize: 50,
+                fontWeight: "700",
+                color:
+                  "#ffffff",
+              }),
+
+              textElement({
+                id: "pf5-email",
+                x: 8,
+                y: 50,
+                width: 50,
+                height: 8,
+                text:
+                  "email@example.com",
+                fontSize: 20,
+                color:
+                  "#fecdd3",
+              }),
+
+              shapeElement({
+                id: "pf5-circle",
+                x: 72,
+                y: 28,
+                width: 15,
+                height: 27,
+                backgroundColor:
+                  "#fb7185",
+                borderRadius:
+                  "999px",
+              }),
+            ],
+          }),
+        ],
+      });
+
+    // ==================================================
+    // CHOOSE INITIAL DATA
+    // ==================================================
+
+    let initialPresentation =
+      blankPresentation();
+
+    if (
+      templateId ===
+      "research-presentation"
+    ) {
+      initialPresentation =
+        researchTemplate();
+    }
+
+    if (
+      templateId ===
+      "pitch-deck"
+    ) {
+      initialPresentation =
+        pitchDeckTemplate();
+    }
+
+    if (
+      templateId ===
+      "project-update"
+    ) {
+      initialPresentation =
+        projectUpdateTemplate();
+    }
+
+    if (
+      templateId ===
+      "portfolio"
+    ) {
+      initialPresentation =
+        portfolioTemplate();
+    }
+
+    // ==================================================
+    // SERIALIZE
+    // ==================================================
 
     const content =
       JSON.stringify(
@@ -3832,7 +6062,7 @@ const createPresentation = async (req, res) => {
       storagePath;
 
     // ==================================================
-    // UPLOAD INITIAL PRESENTATION
+    // UPLOAD
     // ==================================================
 
     await uploadFileToStorage({
@@ -3844,7 +6074,7 @@ const createPresentation = async (req, res) => {
     });
 
     // ==================================================
-    // DATABASE
+    // INSERT DB RECORD
     // ==================================================
 
     const {
@@ -3900,13 +6130,11 @@ const createPresentation = async (req, res) => {
       throw insertError;
     }
 
-    // ==================================================
-    // RESPONSE
-    // ==================================================
-
     return res.status(201).json({
       message:
-        "Presentation created successfully",
+        templateId
+          ? "Presentation created from template successfully"
+          : "Presentation created successfully",
 
       presentation: {
         id:
@@ -3952,14 +6180,18 @@ const createPresentation = async (req, res) => {
       error
     );
 
-    if (uploadedStoragePath) {
+    if (
+      uploadedStoragePath
+    ) {
       try {
         await deleteFileFromStorage(
           uploadedStoragePath
         );
-      } catch (cleanupError) {
+      } catch (
+        cleanupError
+      ) {
         console.error(
-          "Create presentation cleanup error:",
+          "Presentation cleanup error:",
           cleanupError
         );
       }
