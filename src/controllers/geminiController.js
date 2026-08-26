@@ -89,9 +89,9 @@ const getFileContext =
           "owner_id",
           ownerId
         )
-        .is(
-          "deleted_at",
-          null
+        .eq(
+          "is_deleted",
+          false
         )
         .maybeSingle();
 
@@ -169,9 +169,9 @@ const getFolderContext =
           "owner_id",
           ownerId
         )
-        .is(
-          "deleted_at",
-          null
+        .eq(
+          "is_deleted",
+          false
         )
         .maybeSingle();
 
@@ -214,9 +214,9 @@ const getFolderContext =
           "owner_id",
           ownerId
         )
-        .is(
-          "deleted_at",
-          null
+        .eq(
+          "is_deleted",
+          false
         )
         .order(
           "name",
@@ -261,9 +261,9 @@ const getFolderContext =
           "owner_id",
           ownerId
         )
-        .is(
-          "deleted_at",
-          null
+        .eq(
+          "is_deleted",
+          false
         )
         .order(
           "name",
