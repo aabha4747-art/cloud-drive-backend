@@ -1484,14 +1484,7 @@ const createSpreadsheet = async (req, res) => {
       templateId = null,
     } = req.body;
 
-    console.log(
-  "PRESENTATION DEBUG:",
-  {
-    name,
-    folderId,
-    templateId,
-  }
-);
+    
 // ==================================================
     // VALIDATE NAME
     // ==================================================
@@ -3810,6 +3803,15 @@ const createPresentation = async (req, res) => {
       folderId = null,
       templateId = null,
     } = req.body;
+
+    console.log(
+  "PRESENTATION DEBUG:",
+  {
+    name,
+    folderId,
+    templateId,
+  }
+);
 
     // ==================================================
     // VALIDATE NAME
