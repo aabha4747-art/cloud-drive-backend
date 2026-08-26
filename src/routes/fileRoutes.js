@@ -5,14 +5,22 @@ const {
   uploadFile,
   uploadFolder,
 
+  // Cloud documents
   createDocument,
   getDocument,
   updateDocumentContent,
 
+  // Cloud spreadsheets
   createSpreadsheet,
   getSpreadsheet,
   updateSpreadsheetContent,
 
+  // Cloud presentations
+  createPresentation,
+  getPresentation,
+  updatePresentationContent,
+
+  // Normal files
   getFile,
   updateFile,
   deleteFile,
@@ -21,14 +29,6 @@ const {
   permanentlyDeleteFile,
 } = require(
   "../controllers/fileController"
-);
-
-const {
-  createPresentation,
-  getPresentation,
-  updatePresentationContent,
-} = require(
-  "../controllers/presentationController"
 );
 
 const authMiddleware =
@@ -79,22 +79,19 @@ router.post(
 // CLOUD DOCUMENTS
 //
 // IMPORTANT:
-// These must stay ABOVE "/:id".
+// Keep these routes ABOVE "/:id".
 // ======================================================
 
-// Create document
 router.post(
   "/documents",
   createDocument
 );
 
-// Get document
 router.get(
   "/documents/:id",
   getDocument
 );
 
-// Save document
 router.patch(
   "/documents/:id/content",
   updateDocumentContent
@@ -104,22 +101,19 @@ router.patch(
 // CLOUD SPREADSHEETS
 //
 // IMPORTANT:
-// These must also stay ABOVE "/:id".
+// Keep these routes ABOVE "/:id".
 // ======================================================
 
-// Create spreadsheet
 router.post(
   "/spreadsheets",
   createSpreadsheet
 );
 
-// Get spreadsheet
 router.get(
   "/spreadsheets/:id",
   getSpreadsheet
 );
 
-// Save spreadsheet
 router.patch(
   "/spreadsheets/:id/content",
   updateSpreadsheetContent
@@ -129,22 +123,20 @@ router.patch(
 // CLOUD PRESENTATIONS
 //
 // IMPORTANT:
-// These must also stay ABOVE "/:id".
+// These now use fileController.js,
+// where the Pitch Deck and other template logic exists.
 // ======================================================
 
-// Create presentation
 router.post(
   "/presentations",
   createPresentation
 );
 
-// Get presentation
 router.get(
   "/presentations/:id",
   getPresentation
 );
 
-// Save presentation
 router.patch(
   "/presentations/:id/content",
   updatePresentationContent
