@@ -1,10 +1,12 @@
 const {
   GoogleGenAI,
-} = require("@google/genai");
+} = require(
+  "@google/genai"
+);
 
-const pool =
+const supabase =
   require(
-    "../config/db"
+    "../config/supabase"
   );
 
 // ======================================================
@@ -19,7 +21,7 @@ const ai =
   });
 
 // ======================================================
-// HELPERS
+// NORMALIZE ITEMS
 // ======================================================
 
 const normalizeItems =
@@ -59,10 +61,16 @@ const getFileContext =
     fileId,
     ownerId
   ) => {
-    const result =
-      await pool.query(
-        `
-        SELECT
+    const {
+      data,
+      error,
+    } =
+      await supabase
+        .from(
+          "files"
+        )
+        .select(
+          `
           id,
           name,
           mime_type,
@@ -71,55 +79,57 @@ const getFileContext =
           folder_id,
           created_at,
           updated_at
-        FROM files
-        WHERE id = $1
-          AND owner_id = $2
-          AND deleted_at IS NULL
-        LIMIT 1
-        `,
-        [
-          fileId,
-          ownerId,
-        ]
-      );
+          `
+        )
+        .eq(
+          "id",
+          fileId
+        )
+        .eq(
+          "owner_id",
+          ownerId
+        )
+        .is(
+          "deleted_at",
+          null
+        )
+        .maybeSingle();
 
-    if (
-      result.rows.length ===
-      0
-    ) {
-      return null;
+    if (error) {
+      throw error;
     }
 
-    const file =
-      result.rows[0];
+    if (!data) {
+      return null;
+    }
 
     return {
       resourceType:
         "file",
 
       id:
-        file.id,
+        data.id,
 
       name:
-        file.name,
+        data.name,
 
       mimeType:
-        file.mime_type,
+        data.mime_type,
 
       fileKind:
-        file.file_kind,
+        data.file_kind,
 
       sizeBytes:
-        file.size_bytes,
+        data.size_bytes,
 
       folderId:
-        file.folder_id,
+        data.folder_id,
 
       createdAt:
-        file.created_at,
+        data.created_at,
 
       updatedAt:
-        file.updated_at,
+        data.updated_at,
     };
   };
 
@@ -132,41 +142,61 @@ const getFolderContext =
     folderId,
     ownerId
   ) => {
-    const folderResult =
-      await pool.query(
-        `
-        SELECT
+    const {
+      data:
+        folder,
+      error:
+        folderError,
+    } =
+      await supabase
+        .from(
+          "folders"
+        )
+        .select(
+          `
           id,
           name,
           parent_id,
           created_at,
           updated_at
-        FROM folders
-        WHERE id = $1
-          AND owner_id = $2
-          AND deleted_at IS NULL
-        LIMIT 1
-        `,
-        [
-          folderId,
-          ownerId,
-        ]
-      );
+          `
+        )
+        .eq(
+          "id",
+          folderId
+        )
+        .eq(
+          "owner_id",
+          ownerId
+        )
+        .is(
+          "deleted_at",
+          null
+        )
+        .maybeSingle();
 
     if (
-      folderResult.rows
-        .length === 0
+      folderError
     ) {
+      throw folderError;
+    }
+
+    if (!folder) {
       return null;
     }
 
-    const folder =
-      folderResult.rows[0];
-
-    const filesResult =
-      await pool.query(
-        `
-        SELECT
+    const {
+      data:
+        childFiles,
+      error:
+        filesError,
+    } =
+      await supabase
+        .from(
+          "files"
+        )
+        .select(
+          `
           id,
           name,
           mime_type,
@@ -174,39 +204,83 @@ const getFolderContext =
           size_bytes,
           created_at,
           updated_at
-        FROM files
-        WHERE folder_id = $1
-          AND owner_id = $2
-          AND deleted_at IS NULL
-        ORDER BY name ASC
-        LIMIT 100
-        `,
-        [
-          folderId,
-          ownerId,
-        ]
-      );
+          `
+        )
+        .eq(
+          "folder_id",
+          folderId
+        )
+        .eq(
+          "owner_id",
+          ownerId
+        )
+        .is(
+          "deleted_at",
+          null
+        )
+        .order(
+          "name",
+          {
+            ascending:
+              true,
+          }
+        )
+        .limit(
+          100
+        );
 
-    const foldersResult =
-      await pool.query(
-        `
-        SELECT
+    if (
+      filesError
+    ) {
+      throw filesError;
+    }
+
+    const {
+      data:
+        childFolders,
+      error:
+        foldersError,
+    } =
+      await supabase
+        .from(
+          "folders"
+        )
+        .select(
+          `
           id,
           name,
           created_at,
           updated_at
-        FROM folders
-        WHERE parent_id = $1
-          AND owner_id = $2
-          AND deleted_at IS NULL
-        ORDER BY name ASC
-        LIMIT 100
-        `,
-        [
-          folderId,
-          ownerId,
-        ]
-      );
+          `
+        )
+        .eq(
+          "parent_id",
+          folderId
+        )
+        .eq(
+          "owner_id",
+          ownerId
+        )
+        .is(
+          "deleted_at",
+          null
+        )
+        .order(
+          "name",
+          {
+            ascending:
+              true,
+          }
+        )
+        .limit(
+          100
+        );
+
+    if (
+      foldersError
+    ) {
+      throw foldersError;
+    }
 
     return {
       resourceType:
@@ -228,10 +302,12 @@ const getFolderContext =
         folder.updated_at,
 
       childFolders:
-        foldersResult.rows,
+        childFolders ||
+        [],
 
       files:
-        filesResult.rows,
+        childFiles ||
+        [],
     };
   };
 
@@ -329,7 +405,8 @@ const askGemini =
           });
       }
 
-      const contextItems = [];
+      const contextItems =
+        [];
 
       for (
         const item of
@@ -404,9 +481,9 @@ ${cleanQuestion}
 Instructions:
 - Answer only from the supplied selected-item context.
 - Do not invent file contents that are not present.
-- If the user asks about information not available in the context, clearly say that the current integration only has file/folder metadata and folder listings.
-- Be concise but useful.
-- Mention relevant file or folder names when helpful.
+- If the user asks about information that is not available in the supplied metadata or folder listing, clearly say so.
+- Mention relevant file and folder names when useful.
+- Keep the answer concise and practical.
 `;
 
       const response =
