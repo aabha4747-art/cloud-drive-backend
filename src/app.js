@@ -13,6 +13,11 @@ const linkShareRoutes = require("./routes/linkShareRoutes");
 const storageRoutes =
   require("./routes/storageRoutes");
 
+const geminiRoutes =
+  require(
+    "./routes/geminiRoutes"
+  );
+
 const app = express();
 
 // ======================================================
@@ -53,6 +58,8 @@ app.use("/api/starred", starRoutes);
 app.use("/api/links", linkShareRoutes);
 
 app.use("/api/storage", storageRoutes);
+
+app.use("/api/gemini", geminiRoutes);
 
 // ======================================================
 // GLOBAL ERROR HANDLER
