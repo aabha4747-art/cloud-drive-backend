@@ -10,6 +10,20 @@ const supabase =
   );
 
 // ======================================================
+// CONFIG
+// ======================================================
+
+const bucketName =
+  process.env
+    .SUPABASE_STORAGE_BUCKET;
+
+const MAX_TEXT_FILE_BYTES =
+  2 * 1024 * 1024; // 2 MB
+
+const MAX_TEXT_CHARS =
+  100000;
+
+// ======================================================
 // GEMINI CLIENT
 // ======================================================
 
@@ -53,6 +67,185 @@ const normalizeItems =
   };
 
 // ======================================================
+// CHECK WHETHER FILE CAN BE READ AS TEXT
+// ======================================================
+
+const isReadableTextFile =
+  (file) => {
+    const mimeType =
+      (
+        file.mime_type ||
+        ""
+      ).toLowerCase();
+
+    const name =
+      (
+        file.name ||
+        ""
+      ).toLowerCase();
+
+    return (
+      mimeType ===
+        "text/plain" ||
+      name.endsWith(
+        ".txt"
+      )
+    );
+  };
+
+// ======================================================
+// READ FILE CONTENT FROM SUPABASE STORAGE
+// ======================================================
+
+const readTextFileContent =
+  async (file) => {
+    if (
+      !bucketName
+    ) {
+      return {
+        available:
+          false,
+
+        reason:
+          "Storage bucket is not configured.",
+      };
+    }
+
+    if (
+      !file.storage_path
+    ) {
+      return {
+        available:
+          false,
+
+        reason:
+          "This file does not have a storage path.",
+      };
+    }
+
+    if (
+      file.size_bytes &&
+      Number(
+        file.size_bytes
+      ) >
+        MAX_TEXT_FILE_BYTES
+    ) {
+      return {
+        available:
+          false,
+
+        reason:
+          "The text file is too large for this Gemini request.",
+      };
+    }
+
+    if (
+      !isReadableTextFile(
+        file
+      )
+    ) {
+      return {
+        available:
+          false,
+
+        reason:
+          "Actual content extraction is not enabled for this file type yet.",
+      };
+    }
+
+    try {
+      const {
+        data,
+        error,
+      } =
+        await supabase
+          .storage
+          .from(
+            bucketName
+          )
+          .download(
+            file.storage_path
+          );
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data) {
+        return {
+          available:
+            false,
+
+          reason:
+            "The file could not be downloaded from storage.",
+        };
+      }
+
+      const arrayBuffer =
+        await data.arrayBuffer();
+
+      const buffer =
+        Buffer.from(
+          arrayBuffer
+        );
+
+      let text =
+        buffer.toString(
+          "utf8"
+        );
+
+      text =
+        text.replace(
+          /\u0000/g,
+          ""
+        );
+
+      if (
+        text.length >
+        MAX_TEXT_CHARS
+      ) {
+        text =
+          `${text.slice(
+            0,
+            MAX_TEXT_CHARS
+          )}
+
+[Content truncated because the file is very large.]`;
+      }
+
+      return {
+        available:
+          true,
+
+        text:
+          text.trim(),
+      };
+    } catch (err) {
+      console.error(
+        "Read text file error:",
+        {
+          fileId:
+            file.id,
+
+          storagePath:
+            file.storage_path,
+
+          message:
+            err.message,
+        }
+      );
+
+      return {
+        available:
+          false,
+
+        reason:
+          "The file content could not be read from storage.",
+      };
+    }
+  };
+
+// ======================================================
 // GET FILE CONTEXT
 // ======================================================
 
@@ -76,6 +269,7 @@ const getFileContext =
           mime_type,
           file_kind,
           size_bytes,
+          storage_path,
           folder_id,
           created_at,
           updated_at
@@ -102,6 +296,11 @@ const getFileContext =
     if (!data) {
       return null;
     }
+
+    const contentResult =
+      await readTextFileContent(
+        data
+      );
 
     return {
       resourceType:
@@ -130,6 +329,22 @@ const getFileContext =
 
       updatedAt:
         data.updated_at,
+
+      contentAvailable:
+        contentResult
+          .available,
+
+      content:
+        contentResult
+          .available
+          ? contentResult.text
+          : null,
+
+      contentNote:
+        contentResult
+          .available
+          ? null
+          : contentResult.reason,
     };
   };
 
@@ -185,6 +400,10 @@ const getFolderContext =
       return null;
     }
 
+    // ==================================================
+    // CHILD FILES
+    // ==================================================
+
     const {
       data:
         childFiles,
@@ -202,6 +421,7 @@ const getFolderContext =
           mime_type,
           file_kind,
           size_bytes,
+          storage_path,
           created_at,
           updated_at
           `
@@ -234,6 +454,10 @@ const getFolderContext =
     ) {
       throw filesError;
     }
+
+    // ==================================================
+    // CHILD FOLDERS
+    // ==================================================
 
     const {
       data:
@@ -282,6 +506,62 @@ const getFolderContext =
       throw foldersError;
     }
 
+    // ==================================================
+    // READ TXT CONTENT FOR FILES INSIDE FOLDER
+    // ==================================================
+
+    const enhancedFiles =
+      [];
+
+    for (
+      const file of
+      childFiles || []
+    ) {
+      const contentResult =
+        await readTextFileContent(
+          file
+        );
+
+      enhancedFiles.push({
+        id:
+          file.id,
+
+        name:
+          file.name,
+
+        mimeType:
+          file.mime_type,
+
+        fileKind:
+          file.file_kind,
+
+        sizeBytes:
+          file.size_bytes,
+
+        createdAt:
+          file.created_at,
+
+        updatedAt:
+          file.updated_at,
+
+        contentAvailable:
+          contentResult
+            .available,
+
+        content:
+          contentResult
+            .available
+            ? contentResult.text
+            : null,
+
+        contentNote:
+          contentResult
+            .available
+            ? null
+            : contentResult.reason,
+      });
+    }
+
     return {
       resourceType:
         "folder",
@@ -306,8 +586,7 @@ const getFolderContext =
         [],
 
       files:
-        childFiles ||
-        [],
+        enhancedFiles,
     };
   };
 
@@ -321,6 +600,10 @@ const askGemini =
     res
   ) => {
     try {
+      // ==================================================
+      // CONFIG CHECK
+      // ==================================================
+
       if (
         !process.env
           .GEMINI_API_KEY
@@ -338,8 +621,16 @@ const askGemini =
           });
       }
 
+      // ==================================================
+      // USER
+      // ==================================================
+
       const ownerId =
         req.user.id;
+
+      // ==================================================
+      // REQUEST BODY
+      // ==================================================
 
       const {
         question,
@@ -349,6 +640,10 @@ const askGemini =
       const cleanQuestion =
         question
           ?.trim();
+
+      // ==================================================
+      // VALIDATE QUESTION
+      // ==================================================
 
       if (
         !cleanQuestion
@@ -365,6 +660,10 @@ const askGemini =
             },
           });
       }
+
+      // ==================================================
+      // NORMALIZE ITEMS
+      // ==================================================
 
       const normalizedItems =
         normalizeItems(
@@ -404,6 +703,10 @@ const askGemini =
             },
           });
       }
+
+      // ==================================================
+      // BUILD CONTEXT
+      // ==================================================
 
       const contextItems =
         [];
@@ -446,6 +749,10 @@ const askGemini =
         }
       }
 
+      // ==================================================
+      // NOTHING ACCESSIBLE
+      // ==================================================
+
       if (
         contextItems.length ===
         0
@@ -463,12 +770,24 @@ const askGemini =
           });
       }
 
+      // ==================================================
+      // GEMINI PROMPT
+      // ==================================================
+
       const prompt = `
 You are an AI assistant inside a cloud drive application.
 
-The user selected the following drive items.
+The user selected files and/or folders from their own cloud drive.
+
+The supplied JSON can contain:
+
+- file metadata
+- folder metadata
+- folder listings
+- actual text content when contentAvailable is true
 
 SELECTED ITEMS:
+
 ${JSON.stringify(
   contextItems,
   null,
@@ -476,15 +795,35 @@ ${JSON.stringify(
 )}
 
 USER QUESTION:
+
 ${cleanQuestion}
 
 Instructions:
-- Answer only from the supplied selected-item context.
-- Do not invent file contents that are not present.
-- If the user asks about information that is not available in the supplied metadata or folder listing, clearly say so.
-- Mention relevant file and folder names when useful.
-- Keep the answer concise and practical.
+
+1. Use actual file content whenever "contentAvailable" is true.
+
+2. If actual content is available, answer questions about that content normally.
+
+3. If "contentAvailable" is false, do not pretend that you know what is inside that file.
+
+4. If content is unavailable for a file, explain that the file type is not supported for content extraction yet only when that limitation matters to the user's question.
+
+5. When multiple files are selected, clearly distinguish which information came from which file.
+
+6. For summaries, summarize actual content rather than merely listing metadata whenever content is available.
+
+7. For comparisons, compare the actual supplied contents whenever possible.
+
+8. For action-item requests, extract concrete tasks, deadlines, responsibilities, or next steps found in the supplied content.
+
+9. Never invent information that is not present.
+
+10. Keep answers clear, useful, and reasonably concise.
 `;
+
+      // ==================================================
+      // CALL GEMINI
+      // ==================================================
 
       const response =
         await ai.models
@@ -496,8 +835,13 @@ Instructions:
               prompt,
           });
 
+      // ==================================================
+      // ANSWER
+      // ==================================================
+
       const answer =
-        response.text?.trim();
+        response.text
+          ?.trim();
 
       if (
         !answer
@@ -506,6 +850,10 @@ Instructions:
           "Gemini returned an empty response."
         );
       }
+
+      // ==================================================
+      // SUCCESS
+      // ==================================================
 
       return res
         .status(200)
@@ -516,7 +864,7 @@ Instructions:
             contextItems.length,
 
           model:
-            "gemini-2.5-flash",
+            "gemini-3.6-flash",
         });
     } catch (err) {
       console.error(
