@@ -1483,6 +1483,15 @@ const createSpreadsheet = async (req, res) => {
       folderId = null,
       templateId = null,
     } = req.body;
+
+    console.log(
+  "PRESENTATION DEBUG:",
+  {
+    name,
+    folderId,
+    templateId,
+  }
+);
 // ==================================================
     // VALIDATE NAME
     // ==================================================
@@ -6188,6 +6197,19 @@ const createPresentation = async (req, res) => {
       initialPresentation =
         pitchDeckTemplate();
     }
+
+    console.log(
+  "PRESENTATION CREATED WITH:",
+  {
+    templateId,
+    slideCount:
+      initialPresentation
+        ?.slides?.length,
+    activeSlideId:
+      initialPresentation
+        ?.activeSlideId,
+  }
+);
 
     if (
       templateId ===
