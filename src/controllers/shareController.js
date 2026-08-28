@@ -1,4 +1,9 @@
 const supabase = require("../config/supabase");
+const { sendShareEmail } = require("../services/emailService");
+
+// ======================================================
+// CREATE SHARE
+// ======================================================
 
 const createShare = async (req, res) => {
   try {
@@ -10,6 +15,10 @@ const createShare = async (req, res) => {
       folderId = null,
       permission = "viewer",
     } = req.body;
+
+    // --------------------------------------------------
+    // VALIDATION
+    // --------------------------------------------------
 
     if (!email) {
       return res.status(400).json({
@@ -49,6 +58,10 @@ const createShare = async (req, res) => {
 
     const normalizedEmail = email.trim().toLowerCase();
 
+    // --------------------------------------------------
+    // GET PERSON RECEIVING THE SHARE
+    // --------------------------------------------------
+
     const { data: targetUser, error: userError } = await supabase
       .from("users")
       .select("id, name, email")
@@ -77,10 +90,35 @@ const createShare = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------
+    // GET OWNER / SHARER DETAILS
+    // --------------------------------------------------
+
+    const { data: ownerUser, error: ownerUserError } = await supabase
+      .from("users")
+      .select("id, name, email")
+      .eq("id", ownerId)
+      .maybeSingle();
+
+    if (ownerUserError) {
+      console.error("Owner lookup error:", ownerUserError);
+    }
+
+    // --------------------------------------------------
+    // ITEM DETAILS
+    // --------------------------------------------------
+
+    let itemName = "Shared item";
+    let resourceType = fileId ? "file" : "folder";
+
+    // --------------------------------------------------
+    // VALIDATE FILE
+    // --------------------------------------------------
+
     if (fileId) {
       const { data: file, error: fileError } = await supabase
         .from("files")
-        .select("id, owner_id, is_deleted")
+        .select("id, name, owner_id, is_deleted")
         .eq("id", fileId)
         .single();
 
@@ -110,12 +148,19 @@ const createShare = async (req, res) => {
           },
         });
       }
+
+      itemName = file.name;
+      resourceType = "file";
     }
+
+    // --------------------------------------------------
+    // VALIDATE FOLDER
+    // --------------------------------------------------
 
     if (folderId) {
       const { data: folder, error: folderError } = await supabase
         .from("folders")
-        .select("id, owner_id, is_deleted")
+        .select("id, name, owner_id, is_deleted")
         .eq("id", folderId)
         .single();
 
@@ -145,7 +190,14 @@ const createShare = async (req, res) => {
           },
         });
       }
+
+      itemName = folder.name;
+      resourceType = "folder";
     }
+
+    // --------------------------------------------------
+    // CHECK IF ALREADY SHARED
+    // --------------------------------------------------
 
     let existingShareQuery = supabase
       .from("shares")
@@ -177,6 +229,10 @@ const createShare = async (req, res) => {
       });
     }
 
+    // --------------------------------------------------
+    // CREATE SHARE
+    // --------------------------------------------------
+
     const { data: share, error: shareError } = await supabase
       .from("shares")
       .insert({
@@ -195,15 +251,75 @@ const createShare = async (req, res) => {
       throw shareError;
     }
 
+    // --------------------------------------------------
+    // SEND EMAIL NOTIFICATION
+    // --------------------------------------------------
+    //
+    // IMPORTANT:
+    // If sending the email fails, the share itself still
+    // remains successful.
+    // --------------------------------------------------
+
+    let emailSent = false;
+
+    try {
+      const clientUrl =
+        process.env.CLIENT_URL || "http://localhost:5173";
+
+      // For now this opens Shared with me.
+      // Later we can create direct links to individual
+      // files/folders.
+      const openUrl = `${clientUrl}/shared`;
+
+      await sendShareEmail({
+        to: targetUser.email,
+
+        recipientName: targetUser.name,
+
+        sharerName:
+          ownerUser?.name ||
+          ownerUser?.email ||
+          "Someone",
+
+        itemName,
+
+        resourceType,
+
+        permission,
+
+        openUrl,
+      });
+
+      emailSent = true;
+
+      console.log(
+        `Share email sent successfully to ${targetUser.email}`
+      );
+    } catch (emailError) {
+      console.error(
+        "Share created, but notification email failed:",
+        emailError
+      );
+    }
+
+    // --------------------------------------------------
+    // RESPONSE
+    // --------------------------------------------------
+
     return res.status(201).json({
       message: "Item shared successfully",
+
+      emailSent,
+
       share: {
         id: share.id,
+
         sharedWith: {
           id: targetUser.id,
           name: targetUser.name,
           email: targetUser.email,
         },
+
         fileId: share.file_id,
         folderId: share.folder_id,
         permission: share.permission,
@@ -221,6 +337,10 @@ const createShare = async (req, res) => {
     });
   }
 };
+
+// ======================================================
+// GET ITEMS SHARED WITH CURRENT USER
+// ======================================================
 
 const getSharedWithMe = async (req, res) => {
   try {
@@ -247,6 +367,10 @@ const getSharedWithMe = async (req, res) => {
     const sharedItems = [];
 
     for (const share of shares) {
+      // ------------------------------------------------
+      // SHARED FILE
+      // ------------------------------------------------
+
       if (share.file_id) {
         const { data: file, error: fileError } = await supabase
           .from("files")
@@ -262,6 +386,7 @@ const getSharedWithMe = async (req, res) => {
             resourceType: "file",
             permission: share.permission,
             sharedAt: share.created_at,
+
             item: {
               id: file.id,
               name: file.name,
@@ -275,6 +400,10 @@ const getSharedWithMe = async (req, res) => {
           });
         }
       }
+
+      // ------------------------------------------------
+      // SHARED FOLDER
+      // ------------------------------------------------
 
       if (share.folder_id) {
         const { data: folder, error: folderError } = await supabase
@@ -291,6 +420,7 @@ const getSharedWithMe = async (req, res) => {
             resourceType: "folder",
             permission: share.permission,
             sharedAt: share.created_at,
+
             item: {
               id: folder.id,
               name: folder.name,
@@ -319,10 +449,18 @@ const getSharedWithMe = async (req, res) => {
   }
 };
 
+// ======================================================
+// GET SHARES FOR A PARTICULAR ITEM
+// ======================================================
+
 const getSharesForItem = async (req, res) => {
   try {
     const ownerId = req.user.id;
-    const { fileId, folderId } = req.query;
+
+    const {
+      fileId,
+      folderId,
+    } = req.query;
 
     if (!fileId && !folderId) {
       return res.status(400).json({
@@ -341,6 +479,10 @@ const getSharesForItem = async (req, res) => {
         },
       });
     }
+
+    // --------------------------------------------------
+    // VERIFY FILE OWNERSHIP
+    // --------------------------------------------------
 
     if (fileId) {
       const { data: file, error: fileError } = await supabase
@@ -368,6 +510,10 @@ const getSharesForItem = async (req, res) => {
       }
     }
 
+    // --------------------------------------------------
+    // VERIFY FOLDER OWNERSHIP
+    // --------------------------------------------------
+
     if (folderId) {
       const { data: folder, error: folderError } = await supabase
         .from("folders")
@@ -394,6 +540,10 @@ const getSharesForItem = async (req, res) => {
       }
     }
 
+    // --------------------------------------------------
+    // GET SHARE RECORDS
+    // --------------------------------------------------
+
     let query = supabase
       .from("shares")
       .select(
@@ -407,7 +557,10 @@ const getSharesForItem = async (req, res) => {
       query = query.eq("folder_id", folderId);
     }
 
-    const { data: shares, error } = await query;
+    const {
+      data: shares,
+      error,
+    } = await query;
 
     if (error) {
       throw error;
@@ -416,7 +569,10 @@ const getSharesForItem = async (req, res) => {
     const results = [];
 
     for (const share of shares) {
-      const { data: user, error: userError } = await supabase
+      const {
+        data: user,
+        error: userError,
+      } = await supabase
         .from("users")
         .select("id, name, email")
         .eq("id", share.shared_with_id)
@@ -447,11 +603,18 @@ const getSharesForItem = async (req, res) => {
   }
 };
 
+// ======================================================
+// UPDATE SHARE PERMISSION
+// ======================================================
+
 const updateSharePermission = async (req, res) => {
   try {
     const ownerId = req.user.id;
     const shareId = req.params.id;
-    const { permission } = req.body;
+
+    const {
+      permission,
+    } = req.body;
 
     if (!["viewer", "editor"].includes(permission)) {
       return res.status(400).json({
@@ -462,7 +625,14 @@ const updateSharePermission = async (req, res) => {
       });
     }
 
-    const { data: share, error: shareError } = await supabase
+    // --------------------------------------------------
+    // FIND SHARE
+    // --------------------------------------------------
+
+    const {
+      data: share,
+      error: shareError,
+    } = await supabase
       .from("shares")
       .select("*")
       .eq("id", shareId)
@@ -486,7 +656,14 @@ const updateSharePermission = async (req, res) => {
       });
     }
 
-    const { data: updatedShare, error } = await supabase
+    // --------------------------------------------------
+    // UPDATE PERMISSION
+    // --------------------------------------------------
+
+    const {
+      data: updatedShare,
+      error,
+    } = await supabase
       .from("shares")
       .update({
         permission,
@@ -517,12 +694,23 @@ const updateSharePermission = async (req, res) => {
   }
 };
 
+// ======================================================
+// REVOKE SHARE
+// ======================================================
+
 const revokeShare = async (req, res) => {
   try {
     const ownerId = req.user.id;
     const shareId = req.params.id;
 
-    const { data: share, error: shareError } = await supabase
+    // --------------------------------------------------
+    // FIND SHARE
+    // --------------------------------------------------
+
+    const {
+      data: share,
+      error: shareError,
+    } = await supabase
       .from("shares")
       .select("id, owner_id")
       .eq("id", shareId)
@@ -545,6 +733,10 @@ const revokeShare = async (req, res) => {
         },
       });
     }
+
+    // --------------------------------------------------
+    // DELETE SHARE
+    // --------------------------------------------------
 
     const { error } = await supabase
       .from("shares")
@@ -569,6 +761,10 @@ const revokeShare = async (req, res) => {
     });
   }
 };
+
+// ======================================================
+// EXPORTS
+// ======================================================
 
 module.exports = {
   createShare,
