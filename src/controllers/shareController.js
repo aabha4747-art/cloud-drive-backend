@@ -15,7 +15,7 @@ const buildSharedItemUrl = ({
 
   // Shared folder
   if (folderId) {
-    return `${baseUrl}/shared/folders/${folderId}`;
+    return `${baseUrl}/shared/folder/${folderId}`;
   }
 
   // Cloud document
