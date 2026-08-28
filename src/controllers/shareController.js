@@ -2,6 +2,42 @@ const supabase = require("../config/supabase");
 const { sendShareEmail } = require("../services/emailService");
 
 // ======================================================
+// BUILD DIRECT LINK FOR SHARED ITEM
+// ======================================================
+
+const buildSharedItemUrl = ({
+  clientUrl,
+  fileId,
+  folderId,
+  fileKind,
+}) => {
+  const baseUrl = clientUrl.replace(/\/+$/, "");
+
+  // Shared folder
+  if (folderId) {
+    return `${baseUrl}/shared/folders/${folderId}`;
+  }
+
+  // Cloud document
+  if (fileKind === "document") {
+    return `${baseUrl}/documents/${fileId}`;
+  }
+
+  // Cloud spreadsheet
+  if (fileKind === "spreadsheet") {
+    return `${baseUrl}/spreadsheets/${fileId}`;
+  }
+
+  // Cloud presentation
+  if (fileKind === "presentation") {
+    return `${baseUrl}/presentations/${fileId}`;
+  }
+
+  // Regular uploaded file
+  return `${baseUrl}/shared?fileId=${fileId}`;
+};
+
+// ======================================================
 // CREATE SHARE
 // ======================================================
 
@@ -59,7 +95,7 @@ const createShare = async (req, res) => {
     const normalizedEmail = email.trim().toLowerCase();
 
     // --------------------------------------------------
-    // GET PERSON RECEIVING THE SHARE
+    // GET TARGET USER
     // --------------------------------------------------
 
     const { data: targetUser, error: userError } = await supabase
@@ -110,6 +146,7 @@ const createShare = async (req, res) => {
 
     let itemName = "Shared item";
     let resourceType = fileId ? "file" : "folder";
+    let fileKind = "file";
 
     // --------------------------------------------------
     // VALIDATE FILE
@@ -118,7 +155,9 @@ const createShare = async (req, res) => {
     if (fileId) {
       const { data: file, error: fileError } = await supabase
         .from("files")
-        .select("id, name, owner_id, is_deleted")
+        .select(
+          "id, name, owner_id, is_deleted, file_kind"
+        )
         .eq("id", fileId)
         .single();
 
@@ -151,6 +190,7 @@ const createShare = async (req, res) => {
 
       itemName = file.name;
       resourceType = "file";
+      fileKind = file.file_kind || "file";
     }
 
     // --------------------------------------------------
@@ -160,7 +200,9 @@ const createShare = async (req, res) => {
     if (folderId) {
       const { data: folder, error: folderError } = await supabase
         .from("folders")
-        .select("id, name, owner_id, is_deleted")
+        .select(
+          "id, name, owner_id, is_deleted"
+        )
         .eq("id", folderId)
         .single();
 
@@ -206,9 +248,11 @@ const createShare = async (req, res) => {
       .eq("shared_with_id", targetUser.id);
 
     if (fileId) {
-      existingShareQuery = existingShareQuery.eq("file_id", fileId);
+      existingShareQuery =
+        existingShareQuery.eq("file_id", fileId);
     } else {
-      existingShareQuery = existingShareQuery.eq("folder_id", folderId);
+      existingShareQuery =
+        existingShareQuery.eq("folder_id", folderId);
     }
 
     const {
@@ -243,7 +287,15 @@ const createShare = async (req, res) => {
         permission,
       })
       .select(
-        "id, owner_id, shared_with_id, file_id, folder_id, permission, created_at"
+        `
+        id,
+        owner_id,
+        shared_with_id,
+        file_id,
+        folder_id,
+        permission,
+        created_at
+        `
       )
       .single();
 
@@ -252,29 +304,32 @@ const createShare = async (req, res) => {
     }
 
     // --------------------------------------------------
-    // SEND EMAIL NOTIFICATION
+    // BUILD DIRECT ITEM LINK
     // --------------------------------------------------
-    //
-    // IMPORTANT:
-    // If sending the email fails, the share itself still
-    // remains successful.
+
+    const clientUrl =
+      process.env.CLIENT_URL ||
+      "http://localhost:5173";
+
+    const openUrl = buildSharedItemUrl({
+      clientUrl,
+      fileId,
+      folderId,
+      fileKind,
+    });
+
+    // --------------------------------------------------
+    // SEND EMAIL
     // --------------------------------------------------
 
     let emailSent = false;
 
     try {
-      const clientUrl =
-        process.env.CLIENT_URL || "http://localhost:5173";
-
-      // For now this opens Shared with me.
-      // Later we can create direct links to individual
-      // files/folders.
-      const openUrl = `${clientUrl}/shared`;
-
       await sendShareEmail({
         to: targetUser.email,
 
-        recipientName: targetUser.name,
+        recipientName:
+          targetUser.name,
 
         sharerName:
           ownerUser?.name ||
@@ -295,6 +350,10 @@ const createShare = async (req, res) => {
       console.log(
         `Share email sent successfully to ${targetUser.email}`
       );
+
+      console.log(
+        `Shared item direct URL: ${openUrl}`
+      );
     } catch (emailError) {
       console.error(
         "Share created, but notification email failed:",
@@ -311,6 +370,8 @@ const createShare = async (req, res) => {
 
       emailSent,
 
+      openUrl,
+
       share: {
         id: share.id,
 
@@ -321,13 +382,19 @@ const createShare = async (req, res) => {
         },
 
         fileId: share.file_id,
+
         folderId: share.folder_id,
+
         permission: share.permission,
+
         createdAt: share.created_at,
       },
     });
   } catch (error) {
-    console.error("Create share error:", error);
+    console.error(
+      "Create share error:",
+      error
+    );
 
     return res.status(500).json({
       error: {
@@ -339,7 +406,7 @@ const createShare = async (req, res) => {
 };
 
 // ======================================================
-// GET ITEMS SHARED WITH CURRENT USER
+// GET SHARED WITH ME
 // ======================================================
 
 const getSharedWithMe = async (req, res) => {
@@ -358,7 +425,9 @@ const getSharedWithMe = async (req, res) => {
         created_at
       `)
       .eq("shared_with_id", userId)
-      .order("created_at", { ascending: false });
+      .order("created_at", {
+        ascending: false,
+      });
 
     if (error) {
       throw error;
@@ -367,67 +436,143 @@ const getSharedWithMe = async (req, res) => {
     const sharedItems = [];
 
     for (const share of shares) {
-      // ------------------------------------------------
+      // ----------------------------------------------
       // SHARED FILE
-      // ------------------------------------------------
+      // ----------------------------------------------
 
       if (share.file_id) {
-        const { data: file, error: fileError } = await supabase
+        const {
+          data: file,
+          error: fileError,
+        } = await supabase
           .from("files")
           .select(
-            "id, name, mime_type, size_bytes, owner_id, folder_id, is_deleted, created_at, updated_at"
+            `
+            id,
+            name,
+            mime_type,
+            file_kind,
+            size_bytes,
+            owner_id,
+            folder_id,
+            is_deleted,
+            created_at,
+            updated_at
+            `
           )
           .eq("id", share.file_id)
           .single();
 
-        if (!fileError && file && !file.is_deleted) {
+        if (
+          !fileError &&
+          file &&
+          !file.is_deleted
+        ) {
           sharedItems.push({
-            shareId: share.id,
-            resourceType: "file",
-            permission: share.permission,
-            sharedAt: share.created_at,
+            shareId:
+              share.id,
+
+            resourceType:
+              "file",
+
+            permission:
+              share.permission,
+
+            sharedAt:
+              share.created_at,
 
             item: {
-              id: file.id,
-              name: file.name,
-              mimeType: file.mime_type,
-              sizeBytes: file.size_bytes,
-              ownerId: file.owner_id,
-              folderId: file.folder_id,
-              createdAt: file.created_at,
-              updatedAt: file.updated_at,
+              id:
+                file.id,
+
+              name:
+                file.name,
+
+              mimeType:
+                file.mime_type,
+
+              fileKind:
+                file.file_kind,
+
+              sizeBytes:
+                file.size_bytes,
+
+              ownerId:
+                file.owner_id,
+
+              folderId:
+                file.folder_id,
+
+              createdAt:
+                file.created_at,
+
+              updatedAt:
+                file.updated_at,
             },
           });
         }
       }
 
-      // ------------------------------------------------
+      // ----------------------------------------------
       // SHARED FOLDER
-      // ------------------------------------------------
+      // ----------------------------------------------
 
       if (share.folder_id) {
-        const { data: folder, error: folderError } = await supabase
+        const {
+          data: folder,
+          error: folderError,
+        } = await supabase
           .from("folders")
           .select(
-            "id, name, owner_id, parent_id, is_deleted, created_at, updated_at"
+            `
+            id,
+            name,
+            owner_id,
+            parent_id,
+            is_deleted,
+            created_at,
+            updated_at
+            `
           )
           .eq("id", share.folder_id)
           .single();
 
-        if (!folderError && folder && !folder.is_deleted) {
+        if (
+          !folderError &&
+          folder &&
+          !folder.is_deleted
+        ) {
           sharedItems.push({
-            shareId: share.id,
-            resourceType: "folder",
-            permission: share.permission,
-            sharedAt: share.created_at,
+            shareId:
+              share.id,
+
+            resourceType:
+              "folder",
+
+            permission:
+              share.permission,
+
+            sharedAt:
+              share.created_at,
 
             item: {
-              id: folder.id,
-              name: folder.name,
-              ownerId: folder.owner_id,
-              parentId: folder.parent_id,
-              createdAt: folder.created_at,
-              updatedAt: folder.updated_at,
+              id:
+                folder.id,
+
+              name:
+                folder.name,
+
+              ownerId:
+                folder.owner_id,
+
+              parentId:
+                folder.parent_id,
+
+              createdAt:
+                folder.created_at,
+
+              updatedAt:
+                folder.updated_at,
             },
           });
         }
@@ -438,123 +583,199 @@ const getSharedWithMe = async (req, res) => {
       items: sharedItems,
     });
   } catch (error) {
-    console.error("Get shared with me error:", error);
+    console.error(
+      "Get shared with me error:",
+      error
+    );
 
     return res.status(500).json({
       error: {
         code: "INTERNAL_SERVER_ERROR",
-        message: "Unable to fetch shared items",
+        message:
+          "Unable to fetch shared items",
       },
     });
   }
 };
 
 // ======================================================
-// GET SHARES FOR A PARTICULAR ITEM
+// GET SHARES FOR ITEM
 // ======================================================
 
 const getSharesForItem = async (req, res) => {
   try {
-    const ownerId = req.user.id;
+    const ownerId =
+      req.user.id;
 
     const {
       fileId,
       folderId,
     } = req.query;
 
-    if (!fileId && !folderId) {
+    if (
+      !fileId &&
+      !folderId
+    ) {
       return res.status(400).json({
         error: {
-          code: "VALIDATION_ERROR",
-          message: "fileId or folderId is required",
+          code:
+            "VALIDATION_ERROR",
+
+          message:
+            "fileId or folderId is required",
         },
       });
     }
 
-    if (fileId && folderId) {
+    if (
+      fileId &&
+      folderId
+    ) {
       return res.status(400).json({
         error: {
-          code: "VALIDATION_ERROR",
-          message: "Provide either fileId or folderId, not both",
+          code:
+            "VALIDATION_ERROR",
+
+          message:
+            "Provide either fileId or folderId, not both",
         },
       });
     }
 
     // --------------------------------------------------
-    // VERIFY FILE OWNERSHIP
+    // VERIFY FILE OWNER
     // --------------------------------------------------
 
     if (fileId) {
-      const { data: file, error: fileError } = await supabase
+      const {
+        data: file,
+        error: fileError,
+      } = await supabase
         .from("files")
-        .select("id, owner_id")
-        .eq("id", fileId)
+        .select(
+          "id, owner_id"
+        )
+        .eq(
+          "id",
+          fileId
+        )
         .single();
 
-      if (fileError || !file) {
+      if (
+        fileError ||
+        !file
+      ) {
         return res.status(404).json({
           error: {
-            code: "FILE_NOT_FOUND",
-            message: "File not found",
+            code:
+              "FILE_NOT_FOUND",
+
+            message:
+              "File not found",
           },
         });
       }
 
-      if (file.owner_id !== ownerId) {
+      if (
+        file.owner_id !==
+        ownerId
+      ) {
         return res.status(403).json({
           error: {
-            code: "FORBIDDEN",
-            message: "Only the owner can view sharing details",
+            code:
+              "FORBIDDEN",
+
+            message:
+              "Only the owner can view sharing details",
           },
         });
       }
     }
 
     // --------------------------------------------------
-    // VERIFY FOLDER OWNERSHIP
+    // VERIFY FOLDER OWNER
     // --------------------------------------------------
 
     if (folderId) {
-      const { data: folder, error: folderError } = await supabase
+      const {
+        data: folder,
+        error: folderError,
+      } = await supabase
         .from("folders")
-        .select("id, owner_id")
-        .eq("id", folderId)
+        .select(
+          "id, owner_id"
+        )
+        .eq(
+          "id",
+          folderId
+        )
         .single();
 
-      if (folderError || !folder) {
+      if (
+        folderError ||
+        !folder
+      ) {
         return res.status(404).json({
           error: {
-            code: "FOLDER_NOT_FOUND",
-            message: "Folder not found",
+            code:
+              "FOLDER_NOT_FOUND",
+
+            message:
+              "Folder not found",
           },
         });
       }
 
-      if (folder.owner_id !== ownerId) {
+      if (
+        folder.owner_id !==
+        ownerId
+      ) {
         return res.status(403).json({
           error: {
-            code: "FORBIDDEN",
-            message: "Only the owner can view sharing details",
+            code:
+              "FORBIDDEN",
+
+            message:
+              "Only the owner can view sharing details",
           },
         });
       }
     }
 
     // --------------------------------------------------
-    // GET SHARE RECORDS
+    // GET SHARES
     // --------------------------------------------------
 
-    let query = supabase
-      .from("shares")
-      .select(
-        "id, shared_with_id, permission, file_id, folder_id, created_at"
-      )
-      .eq("owner_id", ownerId);
+    let query =
+      supabase
+        .from("shares")
+        .select(
+          `
+          id,
+          shared_with_id,
+          permission,
+          file_id,
+          folder_id,
+          created_at
+          `
+        )
+        .eq(
+          "owner_id",
+          ownerId
+        );
 
     if (fileId) {
-      query = query.eq("file_id", fileId);
+      query =
+        query.eq(
+          "file_id",
+          fileId
+        );
     } else {
-      query = query.eq("folder_id", folderId);
+      query =
+        query.eq(
+          "folder_id",
+          folderId
+        );
     }
 
     const {
@@ -568,36 +789,60 @@ const getSharesForItem = async (req, res) => {
 
     const results = [];
 
-    for (const share of shares) {
+    for (
+      const share
+      of shares
+    ) {
       const {
         data: user,
         error: userError,
       } = await supabase
         .from("users")
-        .select("id, name, email")
-        .eq("id", share.shared_with_id)
+        .select(
+          "id, name, email"
+        )
+        .eq(
+          "id",
+          share.shared_with_id
+        )
         .single();
 
-      if (!userError && user) {
+      if (
+        !userError &&
+        user
+      ) {
         results.push({
-          id: share.id,
+          id:
+            share.id,
+
           user,
-          permission: share.permission,
-          createdAt: share.created_at,
+
+          permission:
+            share.permission,
+
+          createdAt:
+            share.created_at,
         });
       }
     }
 
     return res.status(200).json({
-      shares: results,
+      shares:
+        results,
     });
   } catch (error) {
-    console.error("Get shares error:", error);
+    console.error(
+      "Get shares error:",
+      error
+    );
 
     return res.status(500).json({
       error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Unable to fetch sharing details",
+        code:
+          "INTERNAL_SERVER_ERROR",
+
+        message:
+          "Unable to fetch sharing details",
       },
     });
   }
@@ -609,25 +854,34 @@ const getSharesForItem = async (req, res) => {
 
 const updateSharePermission = async (req, res) => {
   try {
-    const ownerId = req.user.id;
-    const shareId = req.params.id;
+    const ownerId =
+      req.user.id;
+
+    const shareId =
+      req.params.id;
 
     const {
       permission,
     } = req.body;
 
-    if (!["viewer", "editor"].includes(permission)) {
+    if (
+      ![
+        "viewer",
+        "editor",
+      ].includes(
+        permission
+      )
+    ) {
       return res.status(400).json({
         error: {
-          code: "INVALID_PERMISSION",
-          message: "Permission must be viewer or editor",
+          code:
+            "INVALID_PERMISSION",
+
+          message:
+            "Permission must be viewer or editor",
         },
       });
     }
-
-    // --------------------------------------------------
-    // FIND SHARE
-    // --------------------------------------------------
 
     const {
       data: share,
@@ -635,42 +889,64 @@ const updateSharePermission = async (req, res) => {
     } = await supabase
       .from("shares")
       .select("*")
-      .eq("id", shareId)
+      .eq(
+        "id",
+        shareId
+      )
       .single();
 
-    if (shareError || !share) {
+    if (
+      shareError ||
+      !share
+    ) {
       return res.status(404).json({
         error: {
-          code: "SHARE_NOT_FOUND",
-          message: "Share not found",
+          code:
+            "SHARE_NOT_FOUND",
+
+          message:
+            "Share not found",
         },
       });
     }
 
-    if (share.owner_id !== ownerId) {
+    if (
+      share.owner_id !==
+      ownerId
+    ) {
       return res.status(403).json({
         error: {
-          code: "FORBIDDEN",
-          message: "Only the owner can change permissions",
+          code:
+            "FORBIDDEN",
+
+          message:
+            "Only the owner can change permissions",
         },
       });
     }
 
-    // --------------------------------------------------
-    // UPDATE PERMISSION
-    // --------------------------------------------------
-
     const {
-      data: updatedShare,
+      data:
+        updatedShare,
       error,
     } = await supabase
       .from("shares")
       .update({
         permission,
       })
-      .eq("id", shareId)
+      .eq(
+        "id",
+        shareId
+      )
       .select(
-        "id, shared_with_id, file_id, folder_id, permission, created_at"
+        `
+        id,
+        shared_with_id,
+        file_id,
+        folder_id,
+        permission,
+        created_at
+        `
       )
       .single();
 
@@ -679,16 +955,25 @@ const updateSharePermission = async (req, res) => {
     }
 
     return res.status(200).json({
-      message: "Permission updated successfully",
-      share: updatedShare,
+      message:
+        "Permission updated successfully",
+
+      share:
+        updatedShare,
     });
   } catch (error) {
-    console.error("Update share permission error:", error);
+    console.error(
+      "Update share permission error:",
+      error
+    );
 
     return res.status(500).json({
       error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Unable to update permission",
+        code:
+          "INTERNAL_SERVER_ERROR",
+
+        message:
+          "Unable to update permission",
       },
     });
   }
@@ -700,63 +985,87 @@ const updateSharePermission = async (req, res) => {
 
 const revokeShare = async (req, res) => {
   try {
-    const ownerId = req.user.id;
-    const shareId = req.params.id;
+    const ownerId =
+      req.user.id;
 
-    // --------------------------------------------------
-    // FIND SHARE
-    // --------------------------------------------------
+    const shareId =
+      req.params.id;
 
     const {
       data: share,
       error: shareError,
     } = await supabase
       .from("shares")
-      .select("id, owner_id")
-      .eq("id", shareId)
+      .select(
+        "id, owner_id"
+      )
+      .eq(
+        "id",
+        shareId
+      )
       .single();
 
-    if (shareError || !share) {
+    if (
+      shareError ||
+      !share
+    ) {
       return res.status(404).json({
         error: {
-          code: "SHARE_NOT_FOUND",
-          message: "Share not found",
+          code:
+            "SHARE_NOT_FOUND",
+
+          message:
+            "Share not found",
         },
       });
     }
 
-    if (share.owner_id !== ownerId) {
+    if (
+      share.owner_id !==
+      ownerId
+    ) {
       return res.status(403).json({
         error: {
-          code: "FORBIDDEN",
-          message: "Only the owner can revoke access",
+          code:
+            "FORBIDDEN",
+
+          message:
+            "Only the owner can revoke access",
         },
       });
     }
 
-    // --------------------------------------------------
-    // DELETE SHARE
-    // --------------------------------------------------
-
-    const { error } = await supabase
+    const {
+      error,
+    } = await supabase
       .from("shares")
       .delete()
-      .eq("id", shareId);
+      .eq(
+        "id",
+        shareId
+      );
 
     if (error) {
       throw error;
     }
 
     return res.status(200).json({
-      message: "Share revoked successfully",
+      message:
+        "Share revoked successfully",
     });
   } catch (error) {
-    console.error("Revoke share error:", error);
+    console.error(
+      "Revoke share error:",
+      error
+    );
 
     return res.status(500).json({
       error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Unable to revoke share",
+        code:
+          "INTERNAL_SERVER_ERROR",
+
+        message:
+          "Unable to revoke share",
       },
     });
   }
