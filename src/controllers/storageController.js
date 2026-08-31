@@ -1,30 +1,116 @@
 const supabase = require("../config/supabase");
 
 // ======================================================
+// STORAGE CONFIG
+// ======================================================
+
+// Default = 5 GB per user.
+//
+// Later you can put this in Render / .env:
+//
+// STORAGE_QUOTA_BYTES=5368709120
+//
+const DEFAULT_STORAGE_QUOTA =
+  5 * 1024 * 1024 * 1024;
+
+// ======================================================
 // HELPERS
 // ======================================================
 
-const DEFAULT_STORAGE_LIMIT_BYTES =
-  1024 * 1024 * 1024; // 1 GB
+const safeNumber = (value) => {
+  const number = Number(value);
 
-const formatPercent = (
-  usedBytes,
-  limitBytes
-) => {
-  if (!limitBytes) {
+  if (!Number.isFinite(number) || number < 0) {
     return 0;
   }
 
-  return Math.min(
-    100,
-    Number(
-      (
-        (usedBytes /
-          limitBytes) *
-        100
-      ).toFixed(2)
-    )
-  );
+  return number;
+};
+
+const getStorageQuota = () => {
+  const configuredQuota =
+    safeNumber(
+      process.env.STORAGE_QUOTA_BYTES
+    );
+
+  return configuredQuota > 0
+    ? configuredQuota
+    : DEFAULT_STORAGE_QUOTA;
+};
+
+// ======================================================
+// CATEGORY DETECTION
+// ======================================================
+
+const getFileCategory = (file) => {
+  const mimeType =
+    String(
+      file.mime_type || ""
+    ).toLowerCase();
+
+  const fileKind =
+    String(
+      file.file_kind || "file"
+    ).toLowerCase();
+
+  // Cloud-native files
+  if (
+    fileKind === "document" ||
+    fileKind === "spreadsheet" ||
+    fileKind === "presentation"
+  ) {
+    return "documents";
+  }
+
+  // Images
+  if (
+    mimeType.startsWith("image/")
+  ) {
+    return "images";
+  }
+
+  // Videos
+  if (
+    mimeType.startsWith("video/")
+  ) {
+    return "videos";
+  }
+
+  // Audio
+  if (
+    mimeType.startsWith("audio/")
+  ) {
+    return "audio";
+  }
+
+  // PDFs / Word / Excel / PowerPoint / text
+  if (
+    mimeType === "application/pdf" ||
+    mimeType.startsWith("text/") ||
+    mimeType.includes("word") ||
+    mimeType.includes("document") ||
+    mimeType.includes("spreadsheet") ||
+    mimeType.includes("excel") ||
+    mimeType.includes("presentation") ||
+    mimeType.includes("powerpoint") ||
+    mimeType.includes("officedocument")
+  ) {
+    return "documents";
+  }
+
+  // Compressed files
+  if (
+    mimeType.includes("zip") ||
+    mimeType.includes("rar") ||
+    mimeType.includes("7z") ||
+    mimeType.includes("compressed") ||
+    mimeType.includes("archive") ||
+    mimeType.includes("gzip")
+  ) {
+    return "archives";
+  }
+
+  return "other";
 };
 
 // ======================================================
@@ -40,192 +126,251 @@ const getStorageSummary = async (
       req.user.id;
 
     // --------------------------------------------------
-    // ACTIVE FILES
+    // GET ALL FILE RECORDS
+    //
+    // IMPORTANT:
+    // We intentionally DO NOT filter is_deleted.
+    //
+    // Files in Trash still consume storage, similar to
+    // Google Drive. Only permanent deletion frees space.
     // --------------------------------------------------
 
     const {
-      data: activeFiles,
-      error:
-        activeFilesError,
+      data: files,
+      error,
     } = await supabase
       .from("files")
-      .select(
-        "id, name, mime_type, size_bytes, folder_id, created_at, updated_at"
-      )
+      .select(`
+        id,
+        name,
+        mime_type,
+        file_kind,
+        size_bytes,
+        folder_id,
+        is_deleted,
+        created_at,
+        updated_at
+      `)
       .eq(
         "owner_id",
         userId
-      )
-      .eq(
-        "is_deleted",
-        false
       );
 
-    if (activeFilesError) {
-      throw activeFilesError;
+    if (error) {
+      throw error;
     }
 
+    const safeFiles =
+      Array.isArray(files)
+        ? files
+        : [];
+
     // --------------------------------------------------
-    // TRASHED FILES
+    // TOTAL STORAGE
     // --------------------------------------------------
 
-    const {
-      data: trashedFiles,
-      error:
-        trashedFilesError,
-    } = await supabase
-      .from("files")
-      .select(
-        "id, name, size_bytes"
-      )
-      .eq(
-        "owner_id",
-        userId
-      )
-      .eq(
-        "is_deleted",
-        true
-      );
+    let usedBytes = 0;
+    let activeBytes = 0;
+    let trashBytes = 0;
 
-    if (
-      trashedFilesError
+    let activeFileCount = 0;
+    let trashFileCount = 0;
+
+    const categories = {
+      documents: {
+        bytes: 0,
+        count: 0,
+      },
+
+      images: {
+        bytes: 0,
+        count: 0,
+      },
+
+      videos: {
+        bytes: 0,
+        count: 0,
+      },
+
+      audio: {
+        bytes: 0,
+        count: 0,
+      },
+
+      archives: {
+        bytes: 0,
+        count: 0,
+      },
+
+      other: {
+        bytes: 0,
+        count: 0,
+      },
+    };
+
+    // --------------------------------------------------
+    // PROCESS FILES
+    // --------------------------------------------------
+
+    for (
+      const file
+      of safeFiles
     ) {
-      throw trashedFilesError;
+      const sizeBytes =
+        safeNumber(
+          file.size_bytes
+        );
+
+      usedBytes +=
+        sizeBytes;
+
+      if (file.is_deleted) {
+        trashBytes +=
+          sizeBytes;
+
+        trashFileCount +=
+          1;
+      } else {
+        activeBytes +=
+          sizeBytes;
+
+        activeFileCount +=
+          1;
+      }
+
+      const category =
+        getFileCategory(
+          file
+        );
+
+      categories[
+        category
+      ].bytes +=
+        sizeBytes;
+
+      categories[
+        category
+      ].count +=
+        1;
     }
 
-    const safeActiveFiles =
-      activeFiles || [];
-
-    const safeTrashedFiles =
-      trashedFiles || [];
-
     // --------------------------------------------------
-    // CALCULATIONS
+    // QUOTA
     // --------------------------------------------------
 
-    const activeBytes =
-      safeActiveFiles.reduce(
-        (total, file) =>
-          total +
-          Number(
-            file.size_bytes ||
-              0
-          ),
-        0
-      );
+    const quotaBytes =
+      getStorageQuota();
 
-    const trashBytes =
-      safeTrashedFiles.reduce(
-        (total, file) =>
-          total +
-          Number(
-            file.size_bytes ||
-              0
-          ),
-        0
-      );
-
-    const totalUsedBytes =
-      activeBytes +
-      trashBytes;
-
-    const storageLimitBytes =
-      Number(
-        process.env
-          .USER_STORAGE_LIMIT_BYTES
-      ) ||
-      DEFAULT_STORAGE_LIMIT_BYTES;
-
-    const remainingBytes =
+    const availableBytes =
       Math.max(
-        0,
-        storageLimitBytes -
-          totalUsedBytes
+        quotaBytes -
+          usedBytes,
+        0
       );
+
+    const percentageUsed =
+      quotaBytes > 0
+        ? Math.min(
+            (usedBytes /
+              quotaBytes) *
+              100,
+            100
+          )
+        : 0;
+
+    const isFull =
+      usedBytes >=
+      quotaBytes;
 
     // --------------------------------------------------
     // LARGEST FILES
     // --------------------------------------------------
 
     const largestFiles =
-      [...safeActiveFiles]
+      [...safeFiles]
         .sort(
           (a, b) =>
-            Number(
-              b.size_bytes ||
-                0
+            safeNumber(
+              b.size_bytes
             ) -
-            Number(
-              a.size_bytes ||
-                0
+            safeNumber(
+              a.size_bytes
             )
         )
-        .slice(0, 5)
-        .map((file) => ({
-          id: file.id,
-          name: file.name,
+        .slice(
+          0,
+          50
+        )
+        .map(
+          (file) => ({
+            id:
+              file.id,
 
-          mimeType:
-            file.mime_type,
+            name:
+              file.name,
 
-          sizeBytes:
-            Number(
-              file.size_bytes ||
-                0
-            ),
+            mimeType:
+              file.mime_type,
 
-          folderId:
-            file.folder_id,
+            fileKind:
+              file.file_kind,
 
-          createdAt:
-            file.created_at,
+            sizeBytes:
+              safeNumber(
+                file.size_bytes
+              ),
 
-          updatedAt:
-            file.updated_at,
-        }));
+            folderId:
+              file.folder_id,
 
-    // --------------------------------------------------
-    // MIME BREAKDOWN
-    // --------------------------------------------------
+            isDeleted:
+              Boolean(
+                file.is_deleted
+              ),
 
-    const typeMap = {};
+            category:
+              getFileCategory(
+                file
+              ),
 
-    for (
-      const file
-      of safeActiveFiles
-    ) {
-      const mimeType =
-        file.mime_type ||
-        "unknown";
+            createdAt:
+              file.created_at,
 
-      if (!typeMap[mimeType]) {
-        typeMap[mimeType] = {
-          mimeType,
-          fileCount: 0,
-          sizeBytes: 0,
-        };
-      }
-
-      typeMap[
-        mimeType
-      ].fileCount += 1;
-
-      typeMap[
-        mimeType
-      ].sizeBytes +=
-        Number(
-          file.size_bytes ||
-            0
+            updatedAt:
+              file.updated_at,
+          })
         );
-    }
 
-    const storageByType =
-      Object.values(
-        typeMap
-      ).sort(
-        (a, b) =>
-          b.sizeBytes -
-          a.sizeBytes
+    // --------------------------------------------------
+    // CATEGORY ARRAY
+    // --------------------------------------------------
+
+    const categoryBreakdown =
+      Object.entries(
+        categories
+      ).map(
+        ([
+          key,
+          value,
+        ]) => ({
+          category:
+            key,
+
+          bytes:
+            value.bytes,
+
+          count:
+            value.count,
+
+          percentage:
+            usedBytes > 0
+              ? (
+                  value.bytes /
+                  usedBytes
+                ) *
+                100
+              : 0,
+        })
       );
 
     // --------------------------------------------------
@@ -236,40 +381,45 @@ const getStorageSummary = async (
       .status(200)
       .json({
         storage: {
-          usedBytes:
-            totalUsedBytes,
+          quotaBytes,
 
-          activeBytes,
+          usedBytes,
 
-          trashBytes,
+          availableBytes,
 
-          limitBytes:
-            storageLimitBytes,
-
-          remainingBytes,
-
-          usagePercent:
-            formatPercent(
-              totalUsedBytes,
-              storageLimitBytes
+          percentageUsed:
+            Number(
+              percentageUsed.toFixed(
+                2
+              )
             ),
+
+          isFull,
+
+          active: {
+            bytes:
+              activeBytes,
+
+            fileCount:
+              activeFileCount,
+          },
+
+          trash: {
+            bytes:
+              trashBytes,
+
+            fileCount:
+              trashFileCount,
+          },
+
+          totalFileCount:
+            safeFiles.length,
         },
 
-        counts: {
-          activeFiles:
-            safeActiveFiles.length,
-
-          trashedFiles:
-            safeTrashedFiles.length,
-
-          totalFiles:
-            safeActiveFiles.length +
-            safeTrashedFiles.length,
-        },
+        categories:
+          categoryBreakdown,
 
         largestFiles,
-
-        storageByType,
       });
   } catch (error) {
     console.error(
@@ -285,11 +435,15 @@ const getStorageSummary = async (
             "INTERNAL_SERVER_ERROR",
 
           message:
-            "Unable to fetch storage usage",
+            "Unable to calculate storage usage",
         },
       });
   }
 };
+
+// ======================================================
+// EXPORTS
+// ======================================================
 
 module.exports = {
   getStorageSummary,

@@ -5,6 +5,214 @@ const {
 } = require("../services/storageService");
 
 // ======================================================
+// HELPER - CALCULATE RECURSIVE FOLDER SIZES
+// ======================================================
+
+const calculateFolderSizes = async (
+  ownerId,
+  targetFolderIds
+) => {
+  if (
+    !Array.isArray(targetFolderIds) ||
+    targetFolderIds.length === 0
+  ) {
+    return {};
+  }
+
+  // --------------------------------------------------
+  // Get every folder belonging to this owner.
+  //
+  // We need the full folder tree so that a parent
+  // folder can include files stored in nested folders.
+  // --------------------------------------------------
+
+  const {
+    data: allFolders,
+    error: foldersError,
+  } = await supabase
+    .from("folders")
+    .select(
+      "id, parent_id, is_deleted"
+    )
+    .eq(
+      "owner_id",
+      ownerId
+    )
+    .eq(
+      "is_deleted",
+      false
+    );
+
+  if (foldersError) {
+    throw foldersError;
+  }
+
+  // --------------------------------------------------
+  // Get all active files belonging to the owner.
+  // --------------------------------------------------
+
+  const {
+    data: allFiles,
+    error: filesError,
+  } = await supabase
+    .from("files")
+    .select(
+      "id, folder_id, size_bytes"
+    )
+    .eq(
+      "owner_id",
+      ownerId
+    )
+    .eq(
+      "is_deleted",
+      false
+    );
+
+  if (filesError) {
+    throw filesError;
+  }
+
+  const folders =
+    allFolders || [];
+
+  const files =
+    allFiles || [];
+
+  // --------------------------------------------------
+  // parentFolderId -> child folder IDs
+  // --------------------------------------------------
+
+  const childrenMap =
+    new Map();
+
+  for (const folder of folders) {
+    if (!folder.parent_id) {
+      continue;
+    }
+
+    if (
+      !childrenMap.has(
+        folder.parent_id
+      )
+    ) {
+      childrenMap.set(
+        folder.parent_id,
+        []
+      );
+    }
+
+    childrenMap
+      .get(folder.parent_id)
+      .push(folder.id);
+  }
+
+  // --------------------------------------------------
+  // folderId -> bytes belonging directly to folder
+  // --------------------------------------------------
+
+  const directSizeMap =
+    new Map();
+
+  for (const file of files) {
+    if (!file.folder_id) {
+      continue;
+    }
+
+    const fileSize =
+      Number(
+        file.size_bytes
+      ) || 0;
+
+    directSizeMap.set(
+      file.folder_id,
+      (
+        directSizeMap.get(
+          file.folder_id
+        ) || 0
+      ) + fileSize
+    );
+  }
+
+  // --------------------------------------------------
+  // Recursive size calculator
+  // --------------------------------------------------
+
+  const memo =
+    new Map();
+
+  const calculateSize = (
+    folderId,
+    visited = new Set()
+  ) => {
+    if (memo.has(folderId)) {
+      return memo.get(
+        folderId
+      );
+    }
+
+    // Protect against corrupted circular folder trees.
+    if (
+      visited.has(folderId)
+    ) {
+      return 0;
+    }
+
+    const nextVisited =
+      new Set(visited);
+
+    nextVisited.add(
+      folderId
+    );
+
+    let totalSize =
+      directSizeMap.get(
+        folderId
+      ) || 0;
+
+    const childIds =
+      childrenMap.get(
+        folderId
+      ) || [];
+
+    for (
+      const childId
+      of childIds
+    ) {
+      totalSize +=
+        calculateSize(
+          childId,
+          nextVisited
+        );
+    }
+
+    memo.set(
+      folderId,
+      totalSize
+    );
+
+    return totalSize;
+  };
+
+  // --------------------------------------------------
+  // Return only sizes requested by the caller.
+  // --------------------------------------------------
+
+  const result = {};
+
+  for (
+    const folderId
+    of targetFolderIds
+  ) {
+    result[folderId] =
+      calculateSize(
+        folderId
+      );
+  }
+
+  return result;
+};
+
+// ======================================================
 // HELPER - CHECK FOLDER ACCESS
 // ======================================================
 
@@ -911,12 +1119,25 @@ const getRootFolders = async (
       );
 
     if (filesError) {
-      throw filesError;
-    }
+  throw filesError;
+}
 
-    return res
-      .status(200)
-      .json({
+// ==================================================
+// CALCULATE RECURSIVE ROOT FOLDER SIZES
+// ==================================================
+
+const folderSizes =
+  await calculateFolderSizes(
+    ownerId,
+    (folders || []).map(
+      (folder) =>
+        folder.id
+    )
+  );
+
+return res
+  .status(200)
+  .json({
         folders:
           (
             folders || []
@@ -939,6 +1160,11 @@ const getRootFolders = async (
 
               isProject:
                 folder.is_project,
+
+              sizeBytes:
+                folderSizes[
+                  folder.id
+                ] || 0,
 
               createdAt:
                 folder.created_at,
@@ -1143,12 +1369,27 @@ const getFolderContents =
         );
 
       if (filesError) {
-        throw filesError;
-      }
+  throw filesError;
+}
 
-      const isOwner =
-        folder.owner_id ===
-        userId;
+// ==================================================
+// CALCULATE RECURSIVE CHILD FOLDER SIZES
+// ==================================================
+
+const childFolderSizes =
+  await calculateFolderSizes(
+    folderOwnerId,
+    (
+      childFolders || []
+    ).map(
+      (childFolder) =>
+        childFolder.id
+    )
+  );
+
+const isOwner =
+  folder.owner_id ===
+  userId;
 
       return res
         .status(200)
@@ -1218,6 +1459,11 @@ const getFolderContents =
 
                 isProject:
                   childFolder.is_project,
+
+                sizeBytes:
+                  childFolderSizes[
+                    childFolder.id
+                  ] || 0,
 
                 createdAt:
                   childFolder.created_at,

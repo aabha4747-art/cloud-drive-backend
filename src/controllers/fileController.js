@@ -11,6 +11,183 @@ const bucketName =
   process.env.SUPABASE_STORAGE_BUCKET;
 
 // ======================================================
+// STORAGE QUOTA
+// ======================================================
+
+// Default: 5 GB per user.
+// Can be overridden with STORAGE_QUOTA_BYTES in .env.
+const DEFAULT_STORAGE_QUOTA_BYTES =
+  5 * 1024 * 1024 * 1024;
+
+const getStorageQuotaBytes = () => {
+  const configuredQuota =
+    Number(
+      process.env.STORAGE_QUOTA_BYTES
+    );
+
+  if (
+    Number.isFinite(configuredQuota) &&
+    configuredQuota > 0
+  ) {
+    return configuredQuota;
+  }
+
+  return DEFAULT_STORAGE_QUOTA_BYTES;
+};
+
+// ======================================================
+// HELPER: GET USER STORAGE USAGE
+// Trash intentionally counts toward storage.
+// ======================================================
+
+const getUserStorageUsage = async (
+  ownerId
+) => {
+  const {
+    data: files,
+    error,
+  } = await supabase
+    .from("files")
+    .select("size_bytes")
+    .eq("owner_id", ownerId);
+
+  if (error) {
+    throw error;
+  }
+
+  return (files || []).reduce(
+    (total, file) => {
+      const size =
+        Number(file.size_bytes);
+
+      return (
+        total +
+        (Number.isFinite(size)
+          ? size
+          : 0)
+      );
+    },
+    0
+  );
+};
+
+// ======================================================
+// HELPER: CHECK STORAGE QUOTA
+// ======================================================
+
+const checkStorageQuota = async ({
+  ownerId,
+  incomingBytes,
+  replacingBytes = 0,
+}) => {
+  const quotaBytes =
+    getStorageQuotaBytes();
+
+  const usedBytes =
+    await getUserStorageUsage(
+      ownerId
+    );
+
+  const safeIncomingBytes =
+    Math.max(
+      0,
+      Number(incomingBytes) || 0
+    );
+
+  const safeReplacingBytes =
+    Math.max(
+      0,
+      Number(replacingBytes) || 0
+    );
+
+  // When editing an existing cloud file,
+  // its old size is already included in usedBytes.
+  const projectedUsedBytes =
+    Math.max(
+      0,
+      usedBytes -
+        safeReplacingBytes +
+        safeIncomingBytes
+    );
+
+  const availableBytes =
+    Math.max(
+      0,
+      quotaBytes - usedBytes
+    );
+
+  return {
+    allowed:
+      projectedUsedBytes <=
+        quotaBytes ||
+      (
+        safeReplacingBytes > 0 &&
+        safeIncomingBytes <=
+          safeReplacingBytes
+      ),
+
+    quotaBytes,
+
+    usedBytes,
+
+    availableBytes,
+
+    incomingBytes:
+      safeIncomingBytes,
+
+    replacingBytes:
+      safeReplacingBytes,
+
+    projectedUsedBytes,
+
+    exceededByBytes:
+      Math.max(
+        0,
+        projectedUsedBytes -
+          quotaBytes
+      ),
+  };
+};
+
+// ======================================================
+// HELPER: STORAGE QUOTA ERROR RESPONSE
+// ======================================================
+
+const sendStorageQuotaExceeded =
+  (
+    res,
+    quotaResult
+  ) => {
+    return res.status(413).json({
+      error: {
+        code:
+          "STORAGE_QUOTA_EXCEEDED",
+
+        message:
+          "Not enough storage space. Delete files permanently from Trash or free up storage before continuing.",
+
+        quotaBytes:
+          quotaResult.quotaBytes,
+
+        usedBytes:
+          quotaResult.usedBytes,
+
+        availableBytes:
+          quotaResult.availableBytes,
+
+        requiredBytes:
+          quotaResult.incomingBytes,
+
+        projectedUsedBytes:
+          quotaResult.projectedUsedBytes,
+
+        exceededByBytes:
+          quotaResult.exceededByBytes,
+      },
+    });
+  };
+
+// ======================================================
 // HELPER: CHECK SHARED FOLDER PERMISSION
 // ======================================================
 
@@ -246,6 +423,20 @@ const uploadFile = async (req, res) => {
         });
     }
 
+    const quotaResult =
+  await checkStorageQuota({
+    ownerId,
+    incomingBytes:
+      req.file.size,
+  });
+
+if (!quotaResult.allowed) {
+  return sendStorageQuotaExceeded(
+    res,
+    quotaResult
+  );
+}
+
     const storagePath =
       buildStoragePath({
         ownerId,
@@ -452,6 +643,36 @@ const uploadFolder = async (
             targetValidation.error,
         });
     }
+
+    const totalIncomingBytes =
+  files.reduce(
+    (total, file) => {
+      const size =
+        Number(file.size);
+
+      return (
+        total +
+        (Number.isFinite(size)
+          ? size
+          : 0)
+      );
+    },
+    0
+  );
+
+const quotaResult =
+  await checkStorageQuota({
+    ownerId,
+    incomingBytes:
+      totalIncomingBytes,
+  });
+
+if (!quotaResult.allowed) {
+  return sendStorageQuotaExceeded(
+    res,
+    quotaResult
+  );
+}
 
     // ==================================================
     // FOLDER HELPER
@@ -1340,6 +1561,30 @@ const updateDocumentContent =
           content,
           "utf8"
         );
+
+      // ==================================================
+      // CHECK STORAGE QUOTA
+      // ==================================================
+
+      const quotaResult =
+        await checkStorageQuota({
+          ownerId:
+            file.owner_id,
+
+          incomingBytes:
+            buffer.length,
+
+          replacingBytes:
+            file.size_bytes,
+        });
+
+      if (!quotaResult.allowed) {
+        return sendStorageQuotaExceeded(
+          res,
+          quotaResult
+        );
+      }
+
 
       const {
         error:
@@ -3165,6 +3410,26 @@ const createSpreadsheet = async (req, res) => {
       );
 
     // ==================================================
+    // CHECK STORAGE QUOTA
+    // ==================================================
+
+    const quotaResult =
+      await checkStorageQuota({
+        ownerId,
+
+        incomingBytes:
+          buffer.length,
+      });
+
+    if (!quotaResult.allowed) {
+      return sendStorageQuotaExceeded(
+        res,
+        quotaResult
+      );
+    }
+
+
+    // ==================================================
     // STORAGE PATH
     // ==================================================
 
@@ -3687,6 +3952,30 @@ const updateSpreadsheetContent =
           content,
           "utf8"
         );
+
+      // ==================================================
+      // CHECK STORAGE QUOTA
+      // ==================================================
+
+      const quotaResult =
+        await checkStorageQuota({
+          ownerId:
+            file.owner_id,
+
+          incomingBytes:
+            buffer.length,
+
+          replacingBytes:
+            file.size_bytes,
+        });
+
+      if (!quotaResult.allowed) {
+        return sendStorageQuotaExceeded(
+          res,
+          quotaResult
+        );
+      }
+
 
       const {
         error:
@@ -6245,6 +6534,26 @@ const createPresentation = async (req, res) => {
       );
 
     // ==================================================
+    // CHECK STORAGE QUOTA
+    // ==================================================
+
+    const quotaResult =
+      await checkStorageQuota({
+        ownerId,
+
+        incomingBytes:
+          buffer.length,
+      });
+
+    if (!quotaResult.allowed) {
+      return sendStorageQuotaExceeded(
+        res,
+        quotaResult
+      );
+    }
+
+
+    // ==================================================
     // STORAGE PATH
     // ==================================================
 
@@ -6782,6 +7091,30 @@ const updatePresentationContent =
           content,
           "utf8"
         );
+
+      // ==================================================
+      // CHECK STORAGE QUOTA
+      // ==================================================
+
+      const quotaResult =
+        await checkStorageQuota({
+          ownerId:
+            file.owner_id,
+
+          incomingBytes:
+            buffer.length,
+
+          replacingBytes:
+            file.size_bytes,
+        });
+
+      if (!quotaResult.allowed) {
+        return sendStorageQuotaExceeded(
+          res,
+          quotaResult
+        );
+      }
+
 
       const {
         error: storageUpdateError,

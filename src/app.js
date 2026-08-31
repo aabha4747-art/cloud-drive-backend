@@ -1,103 +1,286 @@
-const express = require("express");
-const cors = require("cors");
+const express =
+  require("express");
 
-const authRoutes = require("./routes/authRoutes");
-const folderRoutes = require("./routes/folderRoutes");
-const fileRoutes = require("./routes/fileRoutes");
-const shareRoutes = require("./routes/shareRoutes");
-const searchRoutes = require("./routes/searchRoutes");
-const recentRoutes = require("./routes/recentRoutes");
-const starRoutes = require("./routes/starRoutes");
-const linkShareRoutes = require("./routes/linkShareRoutes");
+const cors =
+  require("cors");
 
-const storageRoutes =
-  require("./routes/storageRoutes");
+// ======================================================
+// ROUTES
+// ======================================================
+
+const authRoutes =
+  require(
+    "./routes/authRoutes"
+  );
+
+const folderRoutes =
+  require(
+    "./routes/folderRoutes"
+  );
+
+const fileRoutes =
+  require(
+    "./routes/fileRoutes"
+  );
+
+const shareRoutes =
+  require(
+    "./routes/shareRoutes"
+  );
+
+const linkShareRoutes =
+  require(
+    "./routes/linkShareRoutes"
+  );
+
+const starRoutes =
+  require(
+    "./routes/starRoutes"
+  );
+
+const recentRoutes =
+  require(
+    "./routes/recentRoutes"
+  );
+
+const searchRoutes =
+  require(
+    "./routes/searchRoutes"
+  );
 
 const geminiRoutes =
   require(
     "./routes/geminiRoutes"
   );
 
-const app = express();
+const storageRoutes =
+  require(
+    "./routes/storageRoutes"
+  );
 
 // ======================================================
-// MIDDLEWARE
+// APP
 // ======================================================
 
-app.use(cors());
-app.use(express.json());
+const app =
+  express();
+
+// ======================================================
+// CORS
+// ======================================================
+
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  })
+);
+
+// ======================================================
+// BODY PARSING
+// ======================================================
+
+app.use(
+  express.json({
+    limit: "10mb",
+  })
+);
+
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: "10mb",
+  })
+);
 
 // ======================================================
 // HEALTH CHECK
 // ======================================================
 
-app.get("/", (req, res) => {
-  res.json({
-    message: "Cloud Drive Backend API is running",
-  });
-});
+app.get(
+  "/",
+  (
+    req,
+    res
+  ) => {
+    return res
+      .status(200)
+      .json({
+        message:
+          "Cloud Drive API is running",
+      });
+  }
+);
+
+app.get(
+  "/api/health",
+  (
+    req,
+    res
+  ) => {
+    return res
+      .status(200)
+      .json({
+        success: true,
+        message:
+          "Cloud Drive backend is healthy",
+        timestamp:
+          new Date().toISOString(),
+      });
+  }
+);
 
 // ======================================================
-// ROUTES
+// API ROUTES
 // ======================================================
 
-app.use("/api/auth", authRoutes);
+app.use(
+  "/api/auth",
+  authRoutes
+);
 
-app.use("/api/folders", folderRoutes);
+app.use(
+  "/api/folders",
+  folderRoutes
+);
 
-app.use("/api/files", fileRoutes);
+app.use(
+  "/api/files",
+  fileRoutes
+);
 
-app.use("/api/shares", shareRoutes);
+app.use(
+  "/api/shares",
+  shareRoutes
+);
 
-app.use("/api/search", searchRoutes);
+app.use(
+  "/api/link-share",
+  linkShareRoutes
+);
 
-app.use("/api/recent", recentRoutes);
+app.use(
+  "/api/starred",
+  starRoutes
+);
 
-app.use("/api/starred", starRoutes);
+app.use(
+  "/api/recent",
+  recentRoutes
+);
 
-app.use("/api/links", linkShareRoutes);
+app.use(
+  "/api/search",
+  searchRoutes
+);
 
-app.use("/api/storage", storageRoutes);
+app.use(
+  "/api/gemini",
+  geminiRoutes
+);
 
-app.use("/api/gemini", geminiRoutes);
+app.use(
+  "/api/storage",
+  storageRoutes
+);
+
+// ======================================================
+// 404 HANDLER
+// ======================================================
+
+app.use(
+  (
+    req,
+    res
+  ) => {
+    return res
+      .status(404)
+      .json({
+        error: {
+          code:
+            "ROUTE_NOT_FOUND",
+
+          message:
+            `Route not found: ${req.method} ${req.originalUrl}`,
+        },
+      });
+  }
+);
 
 // ======================================================
 // GLOBAL ERROR HANDLER
 // ======================================================
 
-app.use((err, req, res, next) => {
-  console.error("Unhandled error:", err);
+app.use(
+  (
+    err,
+    req,
+    res,
+    next
+  ) => {
+    console.error(
+      "Unhandled application error:",
+      err
+    );
 
-  // Multer errors
-  if (err.name === "MulterError") {
-    return res.status(400).json({
-      error: {
-        code: "UPLOAD_ERROR",
-        message: err.message,
-      },
-    });
+    if (
+      err?.name ===
+      "MulterError"
+    ) {
+      return res
+        .status(400)
+        .json({
+          error: {
+            code:
+              "UPLOAD_ERROR",
+
+            message:
+              err.message ||
+              "File upload failed",
+          },
+        });
+    }
+
+    if (
+      err?.message ===
+      "Unsupported file type"
+    ) {
+      return res
+        .status(400)
+        .json({
+          error: {
+            code:
+              "UNSUPPORTED_FILE_TYPE",
+
+            message:
+              "Unsupported file type",
+          },
+        });
+    }
+
+    return res
+      .status(
+        err?.status ||
+          err?.statusCode ||
+          500
+      )
+      .json({
+        error: {
+          code:
+            err?.code ||
+            "INTERNAL_SERVER_ERROR",
+
+          message:
+            err?.message ||
+            "Something went wrong",
+        },
+      });
   }
+);
 
-  // Unsupported file type
-  if (
-    err.message &&
-    err.message.startsWith("Unsupported file type")
-  ) {
-    return res.status(400).json({
-      error: {
-        code: "UNSUPPORTED_FILE_TYPE",
-        message: err.message,
-      },
-    });
-  }
+// ======================================================
+// EXPORT
+// ======================================================
 
-  // Generic error
-  return res.status(500).json({
-    error: {
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Something went wrong",
-    },
-  });
-});
-
-module.exports = app;
+module.exports =
+  app;
