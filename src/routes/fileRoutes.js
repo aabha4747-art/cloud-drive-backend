@@ -31,6 +31,14 @@ const {
   "../controllers/fileController"
 );
 
+const {
+  getFileVersions,
+  uploadNewFileVersion,
+  getArchivedVersionDownloadUrl,
+} = require(
+  "../controllers/fileVersionController"
+);
+
 const authMiddleware =
   require(
     "../middleware/authMiddleware"
@@ -79,7 +87,7 @@ router.post(
 // CLOUD DOCUMENTS
 //
 // IMPORTANT:
-// Keep these routes ABOVE "/:id".
+// Keep ABOVE "/:id".
 // ======================================================
 
 router.post(
@@ -101,7 +109,7 @@ router.patch(
 // CLOUD SPREADSHEETS
 //
 // IMPORTANT:
-// Keep these routes ABOVE "/:id".
+// Keep ABOVE "/:id".
 // ======================================================
 
 router.post(
@@ -123,8 +131,7 @@ router.patch(
 // CLOUD PRESENTATIONS
 //
 // IMPORTANT:
-// These now use fileController.js,
-// where the Pitch Deck and other template logic exists.
+// Keep ABOVE "/:id".
 // ======================================================
 
 router.post(
@@ -145,12 +152,42 @@ router.patch(
 // ======================================================
 // TRASH
 //
+// IMPORTANT:
 // Keep ABOVE "/:id".
 // ======================================================
 
 router.get(
   "/trash",
   getTrash
+);
+
+// ======================================================
+// FILE VERSION HISTORY
+//
+// GET = list versions
+// POST = upload new version
+// ======================================================
+
+router.get(
+  "/:id/versions",
+  getFileVersions
+);
+
+router.post(
+  "/:id/versions",
+  upload.single(
+    "file"
+  ),
+  uploadNewFileVersion
+);
+
+// ======================================================
+// GET OLD VERSION DOWNLOAD URL
+// ======================================================
+
+router.get(
+  "/:id/versions/:versionId",
+  getArchivedVersionDownloadUrl
 );
 
 // ======================================================
